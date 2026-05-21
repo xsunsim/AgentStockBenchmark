@@ -1,0 +1,32 @@
+[project]
+name = "agentstockbenchmark"
+version = "0.1.0"
+description = "Agent stock ranking and portfolio benchmark engine"
+requires-python = ">=3.10"
+dependencies = [
+  "html5lib",
+  "lxml",
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "scipy",
+  "yfinance",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[project.scripts]
+agentstockbenchmark = "agentstockbenchmark.cli:main"
+asb = "agentstockbenchmark.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
