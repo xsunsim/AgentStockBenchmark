@@ -24,7 +24,7 @@ path matching and audit checks are predictable.
 
 This is the engine repository. It owns:
 
-- prompts under `prompts/<prompt_id>/prompt.txt`;
+- prompts under `prompts/<prompt_id>/prompt.md`;
 - reference prompts under `prompts/reference/`;
 - strategy submissions under `strategies/<prompt_id>/<strategy_slug>/strategy.py`;
 - strategy metadata under `strategies/<prompt_id>/<strategy_slug>/strategy.json`;
@@ -107,10 +107,10 @@ Stage 1 owns benchmark instructions and submitted strategy code.
 Prompt layout:
 
 ```text
-prompts/20260517/prompt.txt
-prompts/20260519/prompt.txt
+prompts/20260517/prompt.md
+prompts/20260519/prompt.md
 prompts/reference/PROMPT_V12.md
-prompts/reference/prompt_history/v16/prompt.txt
+prompts/reference/prompt_history/v16/prompt.md
 ```
 
 Strategy layout:
@@ -118,7 +118,7 @@ Strategy layout:
 ```text
 strategies/<prompt_id>/<strategy_slug>/strategy.py
 strategies/<prompt_id>/<strategy_slug>/strategy.json
-strategies/<prompt_id>/<strategy_slug>/prompt.txt
+strategies/<prompt_id>/<strategy_slug>/prompt.md
 strategies/<prompt_id>/<strategy_slug>/meta.json
 ```
 

@@ -27,7 +27,7 @@ def copy_prompt(
 
     dest_dir = prompts_dir / prompt_id
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / "prompt.txt"
+    dest = dest_dir / "prompt.md"
     if dest.exists() and not overwrite:
         return dest
     atomic_write_text(dest, source_prompt.read_text())
@@ -58,7 +58,7 @@ def migrate_cached_strategies(
         if overwrite or not strategy_dest.exists():
             shutil.copy2(strategy_source, strategy_dest)
 
-        for optional_name in ("prompt.txt", "meta.json"):
+        for optional_name in ("prompt.md", "meta.json"):
             optional_source = cache_dir / optional_name
             optional_dest = dest_dir / optional_name
             if optional_source.exists() and (overwrite or not optional_dest.exists()):
