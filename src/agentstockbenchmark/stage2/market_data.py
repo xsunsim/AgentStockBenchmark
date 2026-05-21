@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import time
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -167,10 +168,16 @@ def fetch_sp500_tickers() -> list[str]:
         SP500_WIKIPEDIA_URL,
         headers={"User-Agent": WIKIPEDIA_USER_AGENT},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        html = response.read()
-
-    return parse_sp500_tickers_from_html(html.decode("utf-8", errors="replace"))
+    backoff = 10
+    while True:
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                html = response.read()
+            return parse_sp500_tickers_from_html(html.decode("utf-8", errors="replace"))
+        except Exception as exc:
+            print(f"Error fetching SP500 tickers from Wikipedia: {exc}. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
 
 
 def fallback_universe_tickers(results_repo: Path, cause: Exception) -> list[str]:
@@ -289,25 +296,41 @@ def fetch_daily_ohlcv(tickers: list[str], date: dt.date) -> pd.DataFrame:
 
     start = date.isoformat()
     end = (date + dt.timedelta(days=1)).isoformat()
-    raw = yf.download(
-        tickers,
-        start=start,
-        end=end,
-        auto_adjust=True,
-        threads=True,
-        progress=False,
-    )
-    if raw.empty:
-        return pd.DataFrame(
-            columns=["date", "ticker", "open", "high", "low", "close", "volume"]
-        )
-
-    rows = []
-    for ticker in tickers:
-        row = _extract_download_row(raw, ticker, date)
-        if row is not None:
-            rows.append(row)
-    return pd.DataFrame(rows)
+    
+    backoff = 10
+    while True:
+        try:
+            raw = yf.download(
+                tickers,
+                start=start,
+                end=end,
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            )
+            if raw.empty:
+                print(f"Warning: yfinance returned empty data for {date}. Retrying in {backoff}s...")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)
+                continue
+            
+            rows = []
+            for ticker in tickers:
+                row = _extract_download_row(raw, ticker, date)
+                if row is not None:
+                    rows.append(row)
+            
+            if not rows:
+                print(f"Warning: No valid rows extracted for {date}. Retrying in {backoff}s...")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)
+                continue
+                
+            return pd.DataFrame(rows)
+        except Exception as exc:
+            print(f"Error downloading data for {date}: {exc}. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
 
 def merge_daily_csvs_into_parquets(
     results_repo: Path,
