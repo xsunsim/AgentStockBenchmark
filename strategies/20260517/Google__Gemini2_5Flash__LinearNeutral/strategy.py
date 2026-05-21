@@ -141,11 +141,9 @@ if __name__ == "__main__":
     try:
         daily_ic.index = pd.to_datetime(daily_ic.index)
         yearly_ic = daily_ic.groupby(daily_ic.index.year).mean()
-        print("\n"
-Yearly Mean Rank IC:")
+        print("\nYearly Mean Rank IC:")
         print(yearly_ic)
     except Exception as e:
         pass
         
-    print("\n"
-Research complete. Strategy is ready for production.")
+    print("\nResearch complete. Strategy is ready for production.")

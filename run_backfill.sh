@@ -31,9 +31,10 @@ if not close_path.exists():
 close = pd.read_parquet(close_path)
 trading_dates = sorted(set(close.index.date))
 
-# Start backfill from 2026-04-01 to give all models enough history
+# Start backfill from 2026-04-01
 start_date = dt.date(2026, 4, 1)
 end_date = dt.date(2026, 5, 20)
+
 
 for day in trading_dates:
     if start_date <= day <= end_date:
