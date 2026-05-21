@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import re
 import time
 import urllib.request
+from contextlib import redirect_stderr
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -86,12 +88,15 @@ def download_daily_csv(
     raw_dir.mkdir(parents=True, exist_ok=True)
     csv_path = raw_dir / f"{date_id(date)}.csv"
     if csv_path.exists() and not overwrite:
+        print(f"Using cached daily data for {date}: {csv_path}")
         return csv_path, universe_path
 
+    print(f"Downloading daily data for {date} ({len(tickers)} tickers)...")
     df = fetch_daily_ohlcv(tickers, date)
     if df.empty:
         raise ValueError(f"no OHLCV rows downloaded for {date}")
     atomic_write_csv(csv_path, df)
+    print(f"Successfully saved downloaded data to {csv_path}")
     return csv_path, universe_path
 
 def refresh_daily_data(
@@ -299,38 +304,49 @@ def fetch_daily_ohlcv(tickers: list[str], date: dt.date) -> pd.DataFrame:
     
     backoff = 10
     while True:
-        try:
-            raw = yf.download(
-                tickers,
-                start=start,
-                end=end,
-                auto_adjust=True,
-                threads=True,
-                progress=False,
-            )
-            if raw.empty:
-                print(f"Warning: yfinance returned empty data for {date}. Retrying in {backoff}s...")
+        f = io.StringIO()
+        with redirect_stderr(f):
+            try:
+                raw = yf.download(
+                    tickers,
+                    start=start,
+                    end=end,
+                    auto_adjust=True,
+                    threads=True,
+                    progress=False,
+                )
+            except Exception as exc:
+                print(f"Exception during download for {date}: {exc}. Retrying in {backoff}s...")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 300)
                 continue
-            
-            rows = []
-            for ticker in tickers:
-                row = _extract_download_row(raw, ticker, date)
-                if row is not None:
-                    rows.append(row)
-            
-            if not rows:
-                print(f"Warning: No valid rows extracted for {date}. Retrying in {backoff}s...")
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 300)
-                continue
-                
-            return pd.DataFrame(rows)
-        except Exception as exc:
-            print(f"Error downloading data for {date}: {exc}. Retrying in {backoff}s...")
+
+        err_output = f.getvalue()
+        if "YFRateLimitError" in err_output or "Too Many Requests" in err_output:
+            print(f"Rate limited by yfinance for {date}. Retrying in {backoff}s...")
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
+            continue
+            
+        if raw.empty:
+            print(f"Warning: yfinance returned empty data for {date}. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+            continue
+            
+        rows = []
+        for ticker in tickers:
+            row = _extract_download_row(raw, ticker, date)
+            if row is not None:
+                rows.append(row)
+        
+        if not rows:
+            print(f"Warning: No valid rows extracted for {date}. Check for delistings or market holidays. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+            continue
+                
+        return pd.DataFrame(rows)
 
 def merge_daily_csvs_into_parquets(
     results_repo: Path,
