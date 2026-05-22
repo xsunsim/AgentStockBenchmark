@@ -37,6 +37,13 @@ def main(argv: list[str] | None = None) -> int:
     audit.add_argument("--results-repo", type=Path, default=DEFAULT_RESULTS_REPO)
     audit.add_argument("--data-dir", type=Path, default=None)
 
+    repair = sub.add_parser(
+        "repair-date",
+        help="Force-refresh market data and update PnL for a date",
+    )
+    repair.add_argument("--date", type=parse_date, required=True)
+    repair.add_argument("--results-repo", type=Path, default=DEFAULT_RESULTS_REPO)
+
     research = sub.add_parser("research", help="Isolated strategy research workflows")
     research_sub = research.add_subparsers(dest="command")
     research_gen = research_sub.add_parser(
@@ -231,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_stage2(args, stage2)
     if args.stage == "stage3":
         return run_stage3(args, stage3)
+    if args.stage == "repair-date":
+        return run_repair_command(args)
 
     parser.print_help()
     return 2
@@ -341,6 +350,17 @@ def run_audit_command(args: argparse.Namespace) -> int:
     print(f"{report['audit_date']}\t{report['status']}")
     print(f"rankings\t{report['counts']['rankings']}")
     print(f"portfolios\t{report['counts']['portfolios']}")
+    return 0
+
+
+def run_repair_command(args: argparse.Namespace) -> int:
+    from agentstockbenchmark.workflow import repair_date
+
+    report = repair_date(
+        date=args.date,
+        results_repo=args.results_repo,
+    )
+    print(f"{date_id(args.date)}\t{report['status']}")
     return 0
 
 

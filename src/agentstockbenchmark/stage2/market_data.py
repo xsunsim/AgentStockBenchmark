@@ -370,7 +370,7 @@ def merge_daily_csvs_into_parquets(
             aggfunc="last",
         )
         new_table = new_table.reindex(index=daily_dates, columns=daily_tickers)
-        new_table.index = pd.to_datetime(new_table.index)
+        new_table.index = pd.to_datetime(new_table.index.astype(str))
         new_table.index.name = "Date"
         new_table.columns.name = "Ticker"
         new_table = new_table.apply(pd.to_numeric, errors="coerce")
@@ -584,3 +584,27 @@ def _download_value(raw: pd.DataFrame, source_field: str, ticker: str):
     if source_field in raw.columns:
         return raw[source_field].iloc[0]
     raise KeyError((source_field, ticker))
+
+
+def repair_daily_market_data(
+    date: dt.date,
+    results_repo: Path,
+) -> dict[str, Path]:
+    """Force-download and re-merge market data for a specific date."""
+    print(f"Repairing market data for {date}...")
+    
+    # 1. Force download
+    csv_path, universe_path = download_daily_csv(
+        date=date,
+        results_repo=results_repo,
+        overwrite=True,
+    )
+    
+    # 2. Re-merge into parquets
+    print("Re-merging all daily CSVs into parquets to ensure consistency...")
+    written = merge_daily_csvs_into_parquets(results_repo)
+    
+    # 3. Verify
+    verify_daily_merge(results_repo, date=date)
+    
+    return written

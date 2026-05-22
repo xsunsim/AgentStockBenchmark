@@ -18,6 +18,7 @@ from agentstockbenchmark.stage2.market_data import (
     ensure_cached_daily_from_parquets,
     merge_daily_csvs_into_parquets,
     verify_daily_merge,
+    repair_daily_market_data,
 )
 from agentstockbenchmark.stage2.rankings import generate_rankings
 from agentstockbenchmark.stage3.accounting import update_accounting
@@ -323,6 +324,38 @@ def backfill(
         return report
 
     raise ValueError(f"unknown backfill step: {step}")
+
+
+def repair_date(
+    date: dt.date,
+    results_repo: Path = DEFAULT_RESULTS_REPO,
+) -> dict:
+    """Repair a specific date by re-downloading data and refreshing accounting."""
+    started_at = utc_now()
+    print(f"Starting repair workflow for {date}...")
+    
+    # 1. Repair Market Data (Download + Merge)
+    repair_daily_market_data(date, results_repo)
+    
+    # 2. Refresh Accounting
+    # We need to find all ranking dates that use this date as an entry or exit date.
+    # Usually, t uses t+1 and t+2. So rankings from t-1 and t-2 are affected.
+    print("Refreshing accounting to reflect repaired data...")
+    counts = update_accounting(
+        results_repo=results_repo,
+        rebuild_portfolios=False, # Rankings haven't changed
+    )
+    
+    # 3. Update Leaderboard
+    build_metrics(results_repo=results_repo)
+    build_leaderboard(results_repo=results_repo)
+    
+    return {
+        "run_date": date_id(date),
+        "status": "PASS",
+        "started_at_utc": started_at,
+        "completed_at_utc": utc_now(),
+    }
 
 
 def _step(name: str, status: str, **details) -> dict:
