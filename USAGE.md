@@ -561,6 +561,28 @@ AgentStockBenchmarkResults/manifests/audits/20260519.json
 If audit fails, inspect the first failure printed by the CLI and the JSON
 manifest for the full failure list.
 
+## Repair Data
+
+If a daily run was performed too early (resulting in incomplete data) or if
+there was a network failure during download, use `repair-date` to force-refresh
+market data and update all affected historical PnL:
+
+```bash
+cd AgentStockBenchmark
+PYTHONPATH=src python -m agentstockbenchmark repair-date \
+  --date 20260521 \
+  --results-repo ../AgentStockBenchmarkResults
+```
+
+This command:
+1.  **Force Refreshes Data**: Re-downloads the full market data for that date,
+    overwriting any previous incomplete CSV.
+2.  **Synchronizes Parquets**: Re-merges the repaired CSV into the global
+    Parquet files.
+3.  **Refreshes Accounting**: Recalculates PnL for all historical ranking dates
+    that use this date as an entry or exit price.
+4.  **Updates Leaderboard**: Regenerates the metrics and cumulative PnL chart.
+
 ## Publish
 
 Publish is run from the result repository after audit passes:
@@ -836,7 +858,8 @@ AgentStockBenchmarkResults/data/raw/daily/<YYYYMMDD>.csv
 AgentStockBenchmarkResults/data/parquet/*.parquet
 ```
 
-Then re-run:
+If the data is incomplete (e.g. downloaded too early), use `repair-date`.
+Otherwise, re-run the manual merge:
 
 ```bash
 PYTHONPATH=src python -m agentstockbenchmark stage2 merge-data \
