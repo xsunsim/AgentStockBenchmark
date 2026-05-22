@@ -37,7 +37,7 @@ The true alpha in this benchmark isn't just the model—it's the **ideas**. We e
 
 #### 2. Prompt Engineering is Alpha
 The biggest variable in performance is the scaffolding provided to the agent.
-*   Check [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md) to see how different model lineages (OpenAI, Anthropic, Google) responded to **Prompt Version 20260517**.
+*   Check [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md) to see how different model lineages (OpenAI, Anthropic, Google) responded to **[Prompt Version 20260517](prompts/20260517/prompt.md)**.
 *   Experiment with the prompts in `prompts/`. Can you force a model to better understand overfitting? Can you scaffold it to build more robust volatility-normalization?
 
 ---
@@ -45,7 +45,7 @@ The biggest variable in performance is the scaffolding provided to the agent.
 ### ENGINE DOCUMENTATION
 *   [SYSTEM.md](SYSTEM.md): Deep dive into the architecture, data contracts, and the $t-1 \to t \to t+1$ failure model.
 *   [USAGE.md](USAGE.md): Full CLI cookbook for production, backfilling, and model migration.
-*   [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md): A detailed quantitative analysis of the strategies produced by each model.
+*   [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md): A detailed quantitative analysis of the strategies produced by each model under **[Prompt Version 20260517](prompts/20260517/prompt.md)**.
 
 ### QUICK START
 ```bash
