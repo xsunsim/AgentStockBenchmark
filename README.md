@@ -1,111 +1,65 @@
-# AgentStockBenchmark
+# AgentStockBenchmark: The Clean-Room Engine
 
-AgentStockBenchmark is the benchmark engine for evaluating AI-generated stock
-ranking strategies under a fixed, auditable workflow. It separates strategy
-development from production scoring so that prompts, code submissions, rankings,
-portfolios, accounting, and public result artifacts can be inspected independently.
+### THE ULTIMATE STRESS TEST FOR AGI
+This is a live, tamper-proof arena testing whether the world's smartest AI agents can actually solve the ultimate stock prediction problem. We are not testing raw models in a sterile academic sandbox. We are testing the full autonomous loop—tools like Claude Code, Codex, and Gemini CLI—given clean data, a strict objective, and zero internet access. Every day, they are judged on one highly specific question: **which stock in the S&P 500 will have the best performance tomorrow?**
 
-The system is split across two local repositories:
+Most AI coding benchmarks are broken by data contamination. You never know if an AI "solved" a challenge or just memorized a GitHub repo. But nobody—not OpenAI, not Anthropic, not Google—has a chance to know **which stock in the S&P 500 will have the best performance tomorrow** during its training process. The future is the only uncontaminated test set.
 
-- `AgentStockBenchmark`: benchmark engine, prompts, strategy submissions, CLI workflows,
-  research tooling, audits, and tests.
-- `AgentStockBenchmarkResults`: result repository containing market data, frozen rankings,
-  frozen portfolios, accounting outputs, leaderboard artifacts, manifests, and
-  publish tooling.
+**If you find this project interesting, please consider giving it a ⭐ Star and Forking the repository to test your own ideas!**
 
-The canonical persisted date format is compact `YYYYMMDD`. CLI commands accept
-`YYYYMMDD` and usually accept `YYYY-MM-DD` for convenience, but new artifact
-paths and artifact date columns are written as `YYYYMMDD`.
+---
 
-```text
-data/universe/20260519.txt
-data/raw/daily/20260519.csv
-rankings/20260519/<strategy_id>.csv
-portfolios/20260519/<strategy_id>.csv
-manifests/runs/20260519.json
-```
+### JUST LOOKING FOR THE LEADERBOARD?
+If you are here to see which AI makes the most money in this arena, check out our companion repository:
+👉 **[AgentStockBenchmarkResults](https://github.com/xsunsim/AgentStockBenchmarkResults)**
 
-## Stage Model
+The Results repository hosts the live leaderboard, the beautiful cumulative PnL charts, and the daily performance digests.
 
-The benchmark has three production stages:
+---
 
-1. `stage1`: prompts and strategy submissions.
-2. `stage2`: market data preparation and frozen strategy rankings.
-3. `stage3`: frozen portfolio construction, realized PnL accounting, metrics,
-   and leaderboard generation.
+### THE "CLEAN ROOM" ARCHITECTURE
+To ensure 100% integrity, this engine enforces a strict two-repository boundary:
+1.  **This Repo (`AgentStockBenchmark`)**: The "Clean Room." It hosts the frozen agent logic, the prompts, and the orchestration engine. Once an agent generates a strategy, it is merged here and receives a permanent server-side timestamp.
+2.  **Results Repo (`AgentStockBenchmarkResults`)**: The "Arena." It hosts the realized market data and the public leaderboard. 
 
-Daily production runs compose those stages:
+**The Time Invariant**: An agent is only allowed to see a data snapshot truncated exactly at $t-1$ (yesterday). Its prediction for $t$ (today) must be frozen before market data for $t$ even exists.
 
+---
+
+### FOR DEVELOPERS & RESEARCHERS
+This repository is an open-source engineering laboratory. We invite tech-heavy users to fork this engine and experiment with the "Autonomous Loop."
+
+#### 1. Fork & Extend the Ideas
+The true alpha in this benchmark isn't just the model—it's the **ideas**. We encourage you to:
+*   **Implement New Portfolio Math**: Don't like our Linear Neutral ladder? Fork the engine and implement your own risk-parity or Kelly-criterion sizing logic in `stage3`.
+*   **Agentic Scaffolding**: Modify the research workflow in `agentstockbenchmark.research` to test how different "chain-of-thought" or "self-reflection" loops affect strategy quality.
+*   **Custom Universes**: The engine is built for the S&P 500, but the data-ingestion pipeline is flexible. Extend it to crypto, forex, or international equities.
+
+#### 2. Prompt Engineering is Alpha
+The biggest variable in performance is the scaffolding provided to the agent.
+*   Check [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md) to see how different model lineages (OpenAI, Anthropic, Google) responded to **Prompt Version 20260517**.
+*   Experiment with the prompts in `prompts/`. Can you force a model to better understand overfitting? Can you scaffold it to build more robust volatility-normalization?
+
+---
+
+### ENGINE DOCUMENTATION
+*   [SYSTEM.md](SYSTEM.md): Deep dive into the architecture, data contracts, and the $t-1 \to t \to t+1$ failure model.
+*   [USAGE.md](USAGE.md): Full CLI cookbook for production, backfilling, and model migration.
+*   [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md): A detailed quantitative analysis of the strategies produced by each model.
+
+### QUICK START
 ```bash
+# Clone the engine
+git clone git@github.com:xsunsim/AgentStockBenchmark.git
 cd AgentStockBenchmark
-PYTHONPATH=src python -m agentstockbenchmark daily-run \
-  --date 20260519 \
-  --results-repo ../AgentStockBenchmarkResults
+export PYTHONPATH=src
+
+# List active prompts and strategies
+python -m agentstockbenchmark stage1 list-prompts
+python -m agentstockbenchmark stage1 list-strategies --prompt-id 20260517
 ```
 
-Restart and backfill entrypoints are idempotent by default:
+### WHAT WE ARE NOT
+We are not a hedge fund. We are not a stock recommendation service. **Use it at your own risk.**
 
-```bash
-PYTHONPATH=src python -m agentstockbenchmark resume \
-  --date 20260519 \
-  --results-repo ../AgentStockBenchmarkResults
-
-PYTHONPATH=src python -m agentstockbenchmark backfill \
-  --start 20260501 \
-  --end 20260519 \
-  --step all \
-  --results-repo ../AgentStockBenchmarkResults
-```
-
-## Strategy Seeds
-
-The current prompt IDs are date IDs:
-
-- `20260517`: imported v5 prompt and cached v5 strategies.
-- `20260519`: prompt that documents S&P 500 universe drift and the `0` missing
-  OHLCV sentinel.
-
-Cached strategy migration is intentionally one-way. Migrated agent submissions
-are benchmark inputs, so agent mistakes should be preserved unless the benchmark
-owner explicitly decides to repair or exclude one.
-
-## Research Isolation
-
-Research commands write only under:
-
-```text
-AgentStockBenchmarkResults/research/<prompt_id>/<run_id>/
-```
-
-Research does not write live `rankings/`, `portfolios/`, or `accounting/` paths.
-A strategy enters production only through an explicit promotion command.
-
-## Documentation
-
-- [SYSTEM.md](SYSTEM.md): architecture, data contracts, artifact layout,
-  workflow semantics, and failure model.
-- [USAGE.md](USAGE.md): exact command cookbook for production, recovery,
-  migration, research, audit, publish, and verification tasks.
-- [STRATEGY_EDITORIAL.md](STRATEGY_EDITORIAL.md): A strategic anthology and 
-  editorial review of the quantitative signals generated by each AI agent
-  under **Prompt Version 20260517**.
-
-## Quick Checks
-
-```bash
-cd AgentStockBenchmark
-PYTHONPATH=src python -m agentstockbenchmark --help
-PYTHONPATH=src python -m agentstockbenchmark stage1 list-prompts
-PYTHONPATH=src python -m agentstockbenchmark stage1 validate-strategies --prompt-id 20260519
-```
-
-The result-side publish command lives in `AgentStockBenchmarkResults`:
-
-```bash
-cd ../AgentStockBenchmarkResults
-PYTHONPATH=src python -m agentstockbenchmark_results publish \
-  --date 20260519 \
-  --results-repo .
-```
-```
-# AgentStockBenchmark
+We care if Codex beats Claude Code—not if AAPL beats NVDA tomorrow.
