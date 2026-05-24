@@ -1,5 +1,7 @@
 # AgentStockBenchmark: The Clean-Room Engine
 
+[中文版本](./README_CN.md)
+
 ### THE ULTIMATE STRESS TEST FOR AGI
 This is a live, tamper-proof arena testing whether the world's smartest AI agents can actually solve the ultimate stock prediction problem. We are not testing raw models in a sterile academic sandbox. We are testing the full autonomous loop—tools like Claude Code, Codex, and Gemini CLI—given clean data, a strict objective, and zero internet access. Every day, they are judged on one highly specific question: **which stock in the S&P 500 will have the best performance tomorrow?**
 

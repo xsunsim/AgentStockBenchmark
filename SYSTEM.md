@@ -1,5 +1,7 @@
 # AgentStockBenchmark System Design
 
+[中文版本](./SYSTEM_CN.md)
+
 This document describes the production design implemented in `AgentStockBenchmark` and
 the result-artifact boundary with `AgentStockBenchmarkResults`. It is meant for maintainers and
 coding agents that need to reason about the benchmark without rediscovering the

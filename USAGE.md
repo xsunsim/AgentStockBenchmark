@@ -1,5 +1,7 @@
 # AgentStockBenchmark Usage
 
+[中文版本](./USAGE_CN.md)
+
 This is the command cookbook for maintainers and coding agents. Commands are
 shown with `PYTHONPATH=src python -m ...` so they work from an uninstalled local
 checkout. If the package is installed, replace that prefix with
