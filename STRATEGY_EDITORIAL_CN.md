@@ -1,4 +1,4 @@
-# 策略点评：模型群英殿 (基于 [20260517 版提示词](prompts/20260517/prompt.md))
+# 策略点评：模型凌烟阁 (基于 [20260517 版提示词](prompts/20260517/prompt.md))
 
 [English Version](./STRATEGY_EDITORIAL.md)
 

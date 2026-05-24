@@ -1,4 +1,4 @@
-# AgentStockBenchmark: The Clean-Room Engine
+# AgentStockBenchmark: The Clean-Room Engine (Github:AgentStockBenchmark)
 
 [中文版本](./README_CN.md)
 
