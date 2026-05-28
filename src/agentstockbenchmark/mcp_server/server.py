@@ -169,8 +169,16 @@ def list_available_strategies(prompt_id: str | None = None) -> dict[str, Any]:
             available_prompts = [p.prompt_id for p in list_prompts()]
             if prompt_id not in available_prompts:
                 return {"error": f"Prompt ID {prompt_id!r} not found. Available prompts: {available_prompts}"}
+            
+            strategies = [s.strategy_id for s in list_strategies(prompt_id=prompt_id)]
+            if not strategies:
+                return {
+                    "strategies": [],
+                    "message": f"Prompt {prompt_id!r} found, but no strategy.py files have been generated for it yet."
+                }
+            return {"strategies": strategies}
                 
-        return {"strategies": [s.strategy_id for s in list_strategies(prompt_id=prompt_id)]}
+        return {"strategies": [s.strategy_id for s in list_strategies()]}
     except Exception as e:
         return {"error": f"Error listing strategies: {str(e)}"}
 
@@ -374,21 +382,37 @@ def run_research_backtest(
     try:
         from agentstockbenchmark.workflow import default_data_dir
         from agentstockbenchmark.stage1.strategies import list_strategies
+        from agentstockbenchmark.research import resolve_research_strategies_dir, find_research_run
         
         start = parse_date(start_date)
         end = parse_date(end_date)
         
-        # Estimate work to prevent timeout
-        num_days = len(list(iter_dates(start, end)))
-        # Check num strategies
-        # We need to resolve the strategies_dir first
-        from agentstockbenchmark.research import research_run_dir, resolve_research_strategies_dir
-        actual_run_id = run_id or "latest" # This is a placeholder, resolve_research_strategies_dir handles None
-        # Actually research_backtest generates a NEW run_id if None.
+        # 1. Resolve strategies to estimate workload
+        # If run_id is provided, we check that workspace.
+        strategies_dir = None
+        if run_id:
+            try:
+                run_dir = find_research_run(DEFAULT_RESULTS_REPO, run_id)
+                strategies_dir = resolve_research_strategies_dir(run_dir, prompt_id, None)
+            except Exception:
+                pass # research_backtest will handle missing run_id by creating one
         
-        # For simplicity, let's just warn about large ranges
-        if num_days > 30 and strategy_selector is None:
-             print("Warning: Large backtest detected. This may time out.")
+        # Estimate workload to prevent 4-minute timeouts
+        days = list(iter_dates(start, end))
+        num_days = len(days)
+        
+        # Get count of strategies that will be run
+        strategies = list_strategies(strategies_dir=strategies_dir or STRATEGIES_DIR, prompt_id=prompt_id, selector=strategy_selector)
+        num_strategies = len(strategies)
+        
+        workload = num_days * num_strategies
+        # Threshold: 200 units (e.g. 20 days * 10 strategies)
+        if workload > 200:
+            return {
+                "error": "Backtest workload too heavy for a single request.",
+                "details": f"Attempted {num_days} days x {num_strategies} strategies = {workload} units (Limit: 200).",
+                "hint": "Please use a 'strategy_selector' to run fewer models, or a shorter date range (e.g. 2 weeks)."
+            }
 
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
         
@@ -417,7 +441,14 @@ def analyze_results(run_id: str) -> dict[str, Any]:
     try:
         analysis_path = analyze_research_run(run_id=run_id)
         with open(analysis_path, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            
+        if not data.get("has_metrics", False):
+            data["hint"] = (
+                "Run found, but no performance metrics were generated. "
+                "Ensure that strategies were placed in the workspace and that the backtest completed successfully."
+            )
+        return data
     except Exception as e:
         # Return the exception message directly as it now contains the match list
         return {"error": str(e)}
