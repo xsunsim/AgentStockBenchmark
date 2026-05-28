@@ -5,6 +5,6 @@
   "command": "asb-mcp",
   "args": [],
   "env": {},
-  "install": "pip install git+https://github.com/xsunsim/AgentStockBenchmark.git",
+  "install": "pip install agentstockbenchmark",
   "repository": "https://github.com/xsunsim/AgentStockBenchmark"
 }
