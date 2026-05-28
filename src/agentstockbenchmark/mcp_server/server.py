@@ -52,94 +52,6 @@ def _sync_results_repo(timeout_seconds: int = 30):
         print(f"Warning: Remote sync failed: {str(e)}")
         return False
 
-@mcp.tool()
-def list_active_prompts() -> list[str]:
-    """
-    Lists the IDs of all available strategy generation prompts.
-    """
-    try:
-        from agentstockbenchmark.stage1.prompts import list_prompts
-        return [p.prompt_id for p in list_prompts()]
-    except Exception as e:
-        return [f"Error listing prompts: {str(e)}"]
-
-@mcp.tool()
-def refresh_market_data(date: str) -> str:
-    """
-    Intelligently prepares market data for a specific date.
-    1. Checks if remote GitHub results are updated with this date.
-    2. If not, checks if market is closed and downloads data.
-    
-    Args:
-        date: The date to refresh (YYYYMMDD).
-    """
-    try:
-        from agentstockbenchmark.stage2.market_data import refresh_daily_data
-        from agentstockbenchmark.workflow import default_data_dir
-        import datetime as dt
-        import pandas as pd
-        
-        run_date = parse_date(date)
-        today = dt.date.today()
-        
-        if run_date > today:
-            return f"Error: {date} is in the future. Data only becomes available after market close on the day of trading."
-
-        # 1. Sync and check if data exists in results repo (authoritative source)
-        _sync_results_repo()
-        daily_csv = DEFAULT_RESULTS_REPO / "data" / "raw" / "daily" / f"{date}.csv"
-        
-        if daily_csv.exists():
-            # Re-merge to ensure parquets are updated with the new remote data
-            data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
-            from agentstockbenchmark.stage2.market_data import merge_daily_csvs_into_parquets, verify_daily_merge
-            merge_daily_csvs_into_parquets(DEFAULT_RESULTS_REPO, data_dir)
-            verify_daily_merge(DEFAULT_RESULTS_REPO, data_dir, date=run_date)
-            return f"Market data for {date} found in remote repository and synced locally."
-
-        # 2. If it's today and not in remote, check if market is closed
-        if run_date == today:
-            # Market close is 4:00 PM ET. 
-            now_et = pd.Timestamp.now(tz="America/New_York")
-            market_close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
-            
-            # Give a 15 min buffer
-            if now_et < market_close_et + pd.Timedelta(minutes=15):
-                time_until_close = (market_close_et + pd.Timedelta(minutes=15)) - now_et
-                hours, remainder = divmod(int(time_until_close.total_seconds()), 3600)
-                minutes, _ = divmod(remainder, 60)
-                
-                return (
-                    f"Market for {date} has not closed yet (or data is not yet available). "
-                    f"Current time in New York: {now_et.strftime('%H:%M')}. "
-                    f"Please try again in {hours}h {minutes}m."
-                )
-
-        # 3. Download data locally
-        data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
-        refresh_daily_data(
-            date=run_date,
-            results_repo=DEFAULT_RESULTS_REPO,
-            data_dir=data_dir
-        )
-        return f"Market data for {date} downloaded successfully from public sources."
-    except Exception as e:
-        return f"Failed to refresh market data for {date}: {str(e)}"
-
-@mcp.tool()
-def list_available_strategies(prompt_id: str | None = None) -> list[str]:
-    """
-    Lists all available strategies (model outputs).
-    
-    Args:
-        prompt_id: Optional ID to filter strategies by a specific prompt version.
-    """
-    try:
-        from agentstockbenchmark.stage1.strategies import list_strategies
-        return [s.strategy_id for s in list_strategies(prompt_id=prompt_id)]
-    except Exception as e:
-        return [f"Error listing strategies: {str(e)}"]
-
 def _is_trading_day(date: dt.date) -> bool:
     """Checks if a date is likely a trading day (not weekend or major US holiday)."""
     if date.weekday() >= 5:
@@ -154,8 +66,116 @@ def _is_trading_day(date: dt.date) -> bool:
         return False
     return True
 
+def _validate_trading_date(date_str: str) -> tuple[dt.date | None, dict[str, str] | None]:
+    """Helper to validate if a date string is a valid trading day."""
+    try:
+        date = parse_date(date_str)
+        if date > dt.date.today():
+            return None, {"error": f"{date_str} is in the future. Data is not yet available."}
+        if date.weekday() >= 5:
+            return None, {"error": f"{date_str} is a weekend. Markets are closed."}
+        if not _is_trading_day(date):
+            return None, {"error": f"{date_str} appears to be a market holiday."}
+        return date, None
+    except Exception as e:
+        return None, {"error": f"Invalid date format: {str(e)}"}
+
 @mcp.tool()
-def run_strategy_on_date(strategy_id: str, date: str) -> str:
+def list_active_prompts() -> dict[str, Any]:
+    """
+    Lists the IDs of all available strategy generation prompts.
+    """
+    try:
+        from agentstockbenchmark.stage1.prompts import list_prompts
+        return {"prompts": [p.prompt_id for p in list_prompts()]}
+    except Exception as e:
+        return {"error": f"Error listing prompts: {str(e)}"}
+
+@mcp.tool()
+def refresh_market_data(date: str) -> dict[str, Any]:
+    """
+    Intelligently prepares market data for a specific date.
+    1. Checks if remote GitHub results are updated with this date.
+    2. If not, checks if market is closed and downloads data.
+    
+    Args:
+        date: The date to refresh (YYYYMMDD).
+    """
+    try:
+        from agentstockbenchmark.stage2.market_data import refresh_daily_data
+        from agentstockbenchmark.workflow import default_data_dir
+        import datetime as dt
+        import pandas as pd
+        
+        run_date, error = _validate_trading_date(date)
+        if error:
+            return error
+
+        # 1. Sync and check if data exists in results repo (authoritative source)
+        _sync_results_repo()
+        daily_csv = DEFAULT_RESULTS_REPO / "data" / "raw" / "daily" / f"{date}.csv"
+        
+        if daily_csv.exists():
+            # Re-merge to ensure parquets are updated with the new remote data
+            data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
+            from agentstockbenchmark.stage2.market_data import merge_daily_csvs_into_parquets, verify_daily_merge
+            merge_daily_csvs_into_parquets(DEFAULT_RESULTS_REPO, data_dir)
+            verify_daily_merge(DEFAULT_RESULTS_REPO, data_dir, date=run_date)
+            return {"status": "SUCCESS", "message": f"Market data for {date} found in remote repository and synced locally."}
+
+        # 2. If it's today and not in remote, check if market is closed
+        if run_date == dt.date.today():
+            # Market close is 4:00 PM ET. 
+            now_et = pd.Timestamp.now(tz="America/New_York")
+            market_close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+            
+            # Give a 15 min buffer
+            if now_et < market_close_et + pd.Timedelta(minutes=15):
+                time_until_close = (market_close_et + pd.Timedelta(minutes=15)) - now_et
+                hours, remainder = divmod(int(time_until_close.total_seconds()), 3600)
+                minutes, _ = divmod(remainder, 60)
+                
+                return {
+                    "status": "WAIT",
+                    "error": f"Market for {date} has not closed yet (or data is not yet available).",
+                    "current_time_ny": now_et.strftime('%H:%M'),
+                    "wait_time": f"{hours}h {minutes}m"
+                }
+
+        # 3. Download data locally
+        data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
+        refresh_daily_data(
+            date=run_date,
+            results_repo=DEFAULT_RESULTS_REPO,
+            data_dir=data_dir
+        )
+        return {"status": "SUCCESS", "message": f"Market data for {date} downloaded successfully from public sources."}
+    except Exception as e:
+        return {"status": "FAIL", "error": f"Failed to refresh market data for {date}: {str(e)}"}
+
+@mcp.tool()
+def list_available_strategies(prompt_id: str | None = None) -> dict[str, Any]:
+    """
+    Lists all available strategies (model outputs).
+    
+    Args:
+        prompt_id: Optional ID to filter strategies by a specific prompt version.
+    """
+    try:
+        from agentstockbenchmark.stage1.strategies import list_strategies
+        from agentstockbenchmark.stage1.prompts import list_prompts
+        
+        if prompt_id:
+            available_prompts = [p.prompt_id for p in list_prompts()]
+            if prompt_id not in available_prompts:
+                return {"error": f"Prompt ID {prompt_id!r} not found. Available prompts: {available_prompts}"}
+                
+        return {"strategies": [s.strategy_id for s in list_strategies(prompt_id=prompt_id)]}
+    except Exception as e:
+        return {"error": f"Error listing strategies: {str(e)}"}
+
+@mcp.tool()
+def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
     """
     Runs a specific strategy for a single date to generate rankings.
     Much faster than running the full production pipeline.
@@ -167,16 +187,17 @@ def run_strategy_on_date(strategy_id: str, date: str) -> str:
     try:
         from agentstockbenchmark.stage2.rankings import generate_rankings
         from agentstockbenchmark.workflow import default_data_dir
+        from agentstockbenchmark.stage1.strategies import find_strategy
         
-        run_date = parse_date(date)
-        
-        # Validation for non-trading days
-        if run_date > dt.date.today():
-            return f"FAILED: {date} is in the future. Data is not yet available."
-        if run_date.weekday() >= 5:
-            return f"FAILED: {date} is a weekend. Markets are closed."
-        if not _is_trading_day(run_date):
-            return f"FAILED: {date} appears to be a market holiday."
+        run_date, error = _validate_trading_date(date)
+        if error:
+            return error
+
+        # Check if strategy exists
+        try:
+            find_strategy(strategy_id)
+        except Exception:
+            return {"error": f"Strategy {strategy_id!r} not found."}
 
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
         
@@ -190,7 +211,7 @@ def run_strategy_on_date(strategy_id: str, date: str) -> str:
                 refresh_market_data(date)
                 close = pd.read_parquet(close_path)
                 if pd.Timestamp(run_date) not in close.index:
-                    return f"FAILED: No market data found for {date} in local parquets even after refresh."
+                    return {"status": "FAIL", "error": f"No market data found for {date} in local parquets even after refresh."}
 
         report = generate_rankings(
             start=run_date,
@@ -203,10 +224,10 @@ def run_strategy_on_date(strategy_id: str, date: str) -> str:
         
         res = report.get(date, {}).get(strategy_id, "FAILED")
         if res == "FAILED":
-            return f"FAILED: Strategy execution failed for {strategy_id} on {date}. Check model output formatting."
-        return f"Strategy {strategy_id} run for {date}. Status: {res}"
+            return {"status": "FAIL", "error": f"Strategy execution failed for {strategy_id} on {date}. Check model output formatting."}
+        return {"status": "SUCCESS", "strategy_id": strategy_id, "date": date, "result": res}
     except Exception as e:
-        return f"Error running strategy: {str(e)}"
+        return {"status": "FAIL", "error": f"Error running strategy: {str(e)}"}
 
 def _get_previous_trading_date(date: dt.date) -> dt.date:
     """Finds the likely previous trading day."""
@@ -227,12 +248,26 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         top_n: Number of top long/short positions to return.
     """
     from agentstockbenchmark.stage3.portfolio import build_portfolios
+    from agentstockbenchmark.stage1.strategies import find_strategy
     import pandas as pd
     
     try:
-        trading_date = parse_date(target_trading_date)
+        # 0. Validate strategy existence
+        try:
+            find_strategy(strategy_id)
+        except Exception:
+            return {"error": f"Strategy {strategy_id!r} not found."}
+
+        # 1. Validate date
+        try:
+            trading_date = parse_date(target_trading_date)
+        except Exception as e:
+            return {"error": f"Invalid date format: {str(e)}"}
+            
+        if trading_date > dt.date.today() + dt.timedelta(days=1):
+            return {"error": f"{target_trading_date} is too far in the future. Predictions are only available for the next trading day."}
         
-        # Search backwards for the most recent valid ranking date
+        # 2. Search backwards for the most recent valid ranking date
         current_search_date = trading_date
         max_lookback = 7
         ranking_date = None
@@ -243,20 +278,18 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
             ranking_date_str = date_id(current_search_date)
             path = DEFAULT_RESULTS_REPO / "portfolios" / ranking_date_str / f"{strategy_id}.csv"
             
-            # 1. If it exists, we are done
+            # If it exists, we are done
             if path.exists():
                 portfolio_path = path
                 ranking_date = current_search_date
                 break
             
-            # 2. If it doesn't exist, and it's the MOST RECENT possible trading day, try to generate it
+            # If it doesn't exist, and it's the MOST RECENT possible trading day, try to generate it
             if i == 0: 
-                print(f"Attempting auto-heal for ranking date {ranking_date_str}...")
-                refresh_status = refresh_market_data(ranking_date_str)
-                # If data was found or downloaded
-                if "Error:" not in refresh_status and "not closed" not in refresh_status:
-                    run_status = run_strategy_on_date(strategy_id, ranking_date_str)
-                    if "PASS" in run_status or "run for" in run_status:
+                refresh_res = refresh_market_data(ranking_date_str)
+                if refresh_res.get("status") == "SUCCESS":
+                    run_res = run_strategy_on_date(strategy_id, ranking_date_str)
+                    if run_res.get("status") == "SUCCESS":
                         build_portfolios(results_repo=DEFAULT_RESULTS_REPO, ranking_date=current_search_date)
                         if path.exists():
                             portfolio_path = path
@@ -291,7 +324,7 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         return {"error": str(e)}
 
 @mcp.tool()
-def create_research_workspace(prompt_id: str, run_id: str | None = None) -> str:
+def create_research_workspace(prompt_id: str, run_id: str | None = None) -> dict[str, Any]:
     """
     Creates an isolated workspace for generating new trading strategies.
     
@@ -300,10 +333,19 @@ def create_research_workspace(prompt_id: str, run_id: str | None = None) -> str:
         run_id: Optional unique ID for this research run.
     """
     try:
+        from agentstockbenchmark.stage1.prompts import list_prompts
+        available_prompts = [p.prompt_id for p in list_prompts()]
+        if prompt_id not in available_prompts:
+            return {"error": f"Prompt ID {prompt_id!r} not found. Available prompts: {available_prompts}"}
+            
         run_dir = generate_strategies_workspace(prompt_id=prompt_id, run_id=run_id)
-        return f"Research workspace created at: {run_dir}. Please place your generated strategy.py files in {run_dir}/strategies/{prompt_id}/<strategy_slug>/strategy.py"
+        return {
+            "status": "SUCCESS",
+            "workspace_path": str(run_dir),
+            "instructions": f"Please place your generated strategy.py files in {run_dir}/strategies/{prompt_id}/<strategy_slug>/strategy.py"
+        }
     except Exception as e:
-        return f"Error creating workspace: {str(e)}"
+        return {"error": f"Error creating workspace: {str(e)}"}
 
 @mcp.tool()
 def run_research_backtest(
@@ -312,7 +354,7 @@ def run_research_backtest(
     end_date: str, 
     run_id: str | None = None,
     strategy_selector: str | None = None
-) -> str:
+) -> dict[str, Any]:
     """
     Runs a backtest on strategies in a research workspace.
     
@@ -338,9 +380,9 @@ def run_research_backtest(
             run_id=run_id,
             strategy_selector=strategy_selector
         )
-        return f"Backtest completed. Results available in: {run_dir}"
+        return {"status": "SUCCESS", "results_workspace": str(run_dir)}
     except Exception as e:
-        return f"Error running backtest: {str(e)}"
+        return {"error": f"Error running backtest: {str(e)}"}
 
 @mcp.tool()
 def analyze_results(run_id: str) -> dict[str, Any]:
@@ -357,11 +399,10 @@ def analyze_results(run_id: str) -> dict[str, Any]:
         with open(analysis_path, 'r') as f:
             return json.load(f)
     except Exception as e:
-        # Return the exception message directly as it now contains the match list
         return {"error": str(e)}
 
 @mcp.tool()
-def promote_strategy(run_id: str, strategy_id: str) -> str:
+def promote_strategy(run_id: str, strategy_id: str) -> dict[str, Any]:
     """
     Promotes a successful research strategy to the production 'strategies/' directory.
     
@@ -371,9 +412,9 @@ def promote_strategy(run_id: str, strategy_id: str) -> str:
     """
     try:
         dest_path = promote_research_strategy(run_id=run_id, strategy_id=strategy_id)
-        return f"Strategy promoted to production: {dest_path}"
+        return {"status": "SUCCESS", "promoted_path": str(dest_path)}
     except Exception as e:
-        return f"Error promoting strategy: {str(e)}"
+        return {"error": f"Error promoting strategy: {str(e)}"}
 
 @mcp.tool()
 def run_production_daily(date: str) -> dict[str, Any]:
@@ -384,14 +425,17 @@ def run_production_daily(date: str) -> dict[str, Any]:
         date: The date to run (YYYYMMDD).
     """
     try:
-        run_date = parse_date(date)
+        run_date, error = _validate_trading_date(date)
+        if error:
+            return error
+            
         report = run_daily(run_date=run_date)
         return report
     except Exception as e:
         return {"status": "FAIL", "error": str(e)}
 
 @mcp.tool()
-def get_leaderboard() -> str:
+def get_leaderboard() -> dict[str, Any]:
     """
     Retrieves the current production leaderboard in Markdown format.
     Automatically syncs with the remote repository to ensure data is up to date.
@@ -406,15 +450,15 @@ def get_leaderboard() -> str:
         # Ensure leaderboard is up to date from local data
         build_leaderboard(results_repo=DEFAULT_RESULTS_REPO)
     except Exception as e:
-        return (
-            f"Leaderboard currently unavailable. Sync or build failed: {str(e)}\n"
-            "You may need to run 'run_production_daily' to generate local data."
-        )
+        return {
+            "error": f"Leaderboard currently unavailable. Sync or build failed: {str(e)}",
+            "hint": "You may need to run 'run_production_daily' to generate local data."
+        }
     
     leaderboard_path = DEFAULT_RESULTS_REPO / "leaderboard" / "leaderboard.md"
     if leaderboard_path.exists():
-        return leaderboard_path.read_text()
-    return "Leaderboard file not found after sync."
+        return {"leaderboard_markdown": leaderboard_path.read_text()}
+    return {"error": "Leaderboard file not found after sync."}
 
 if __name__ == "__main__":
     mcp.run()
