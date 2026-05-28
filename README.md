@@ -61,43 +61,75 @@ python -m agentstockbenchmark stage1 list-prompts
 python -m agentstockbenchmark stage1 list-strategies --prompt-id 20260517
 ```
 
-### MCP SERVER (Model Context Protocol)
-This engine can be run as an MCP server, allowing you to use it directly from an AI agent or a client like Claude Desktop.
+### 🤖 USE IT AS AN MCP SERVER (Model Context Protocol)
 
-#### Running the MCP Server
+We have officially published AgentStockBenchmark as an MCP server. This allows you to give AI agents (like Claude Desktop or Cursor) direct access to our live market data, strategy execution engine, and historical leaderboard.
+
+#### 1. Installation
+
+**Method A: Standard Python (PyPI)**
+The easiest and most robust method.
 ```bash
-# Install dependencies
-pip install .
-
-# Start the server
-asb-mcp
+pip install agentstockbenchmark
 ```
 
-#### Available Tools
-*   `get_leaderboard`: Retrieves the current production leaderboard (auto-syncs with GitHub).
-*   `list_active_prompts`: Lists IDs of available strategy generation prompts.
-*   `list_available_strategies`: Lists all strategies currently in the production system.
-*   `get_top_positions`: Returns the top long/short stock positions for a model on a specific date.
-*   `run_strategy_on_date`: Runs a specific strategy for a single date (faster than full daily run).
-*   `refresh_market_data`: Downloads and prepares market data for a specific date.
-*   `create_research_workspace`: Sets up an isolated area for strategy generation.
-*   `run_research_backtest`: Runs a backtest for a specific research run.
-*   `analyze_results`: Summarizes performance of a research run.
-*   `promote_strategy`: Promotes a successful research strategy to production.
-*   `run_production_daily`: Executes the full daily production pipeline.
+**Method B: MCP-Get (For Claude Desktop)**
+If you use the `mcp-get` package manager:
+```bash
+npx @michaellatman/mcp-get install github.com/xsunsim/AgentStockBenchmark
+```
 
-### FOR AI AGENTS (OPERATIONAL GUIDE)
-If you are an AI agent using this MCP, follow these best practices for a seamless experience:
+#### 2. Configuration (Claude Desktop)
+If you used Method A (PyPI), simply add this to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "agent-stock": {
+      "command": "asb-mcp",
+      "env": {}
+    }
+  }
+}
+```
+
+#### 3. Available Tools & Capabilities
+Once connected, your AI assistant has access to 11 specialized tools, categorized below:
+
+**A. Core Discovery & Performance**
+*   `get_leaderboard`: Instantly fetches the live, auto-synced production leaderboard from GitHub.
+*   `list_active_prompts`: Shows available strategy generation templates (e.g., `20260517`).
+*   `list_available_strategies`: Lists all AI-generated models currently competing in the arena.
+
+**B. The "Autopilot" Prediction Engine**
+*   `get_top_positions`: **(Highly Recommended)** Just tell the AI what day you want to trade (e.g., "Show me top positions for tomorrow"). This tool automatically handles the complex pipeline: checking market hours, syncing remote data, running the specified strategy, and returning the top 10 long/short stocks.
+*   `run_strategy_on_date`: Run a single model on a specific date for targeted analysis.
+*   `refresh_market_data`: Force a download of the latest OHLCV data for the S&P 500 universe.
+
+**C. The Research Sandbox (Build Your Own)**
+*   `create_research_workspace`: Sets up an isolated local folder for you to test a brand new prompt or strategy.
+*   `run_research_backtest`: Evaluates your experimental strategy over a custom date range.
+*   `analyze_results`: Calculates Sharpe ratio and PnL for your experiment.
+*   `promote_strategy`: Pushes a winning experimental strategy into your local production arena.
+
+**D. Production Workflows**
+*   `run_production_daily`: Executes the full $T-1 \to T$ pipeline (data ingestion, running all production strategies, portfolio construction, and leaderboard updating) for a given date.
+
+---
+
+### 🧠 FOR AI AGENTS (OPERATIONAL GUIDE)
+If you are an AI agent reading this via MCP, follow these best practices:
 
 1.  **Checking Performance**: Always start with `get_leaderboard` to see which model lineages are currently winning.
-2.  **Predicting the Future**: To get positions for the *next* trading day, use `get_top_positions` with the `target_trading_date` set to the next day. The tool will automatically handle the "Autopilot" sequence (syncing data and running strategies).
+2.  **Predicting the Future**: To get positions for the *next* trading day, use `get_top_positions` with the `target_trading_date` set to the next day. The tool handles all data fetching and execution automatically.
 3.  **Experimental Workflow**:
-    *   `list_active_prompts` to find a starting point.
-    *   `create_research_workspace` to set up a lab.
+    *   Use `list_active_prompts` to find a starting point.
+    *   Use `create_research_workspace` to set up a lab.
     *   Generate a new `strategy.py` file based on the prompt.
-    *   `run_research_backtest` to verify your idea.
-    *   `analyze_results` to see if your Sharpe ratio beats the current leaderboard.
-4.  **Data Latency**: Market data for "Today" is usually available 15 minutes after the New York market close (4:15 PM ET).
+    *   Use `run_research_backtest` to verify your idea. (Limit date ranges to < 30 days to avoid timeouts).
+    *   Use `analyze_results` to see if your Sharpe ratio beats the current leaderboard.
+4.  **Data Latency**: Market data for "Today" only becomes available 15 minutes after the New York market close (4:15 PM ET). Do not attempt to pull data for today while the market is still open.
+
+---
 
 ### WHAT WE ARE NOT
 We are not a hedge fund. We are not a stock recommendation service. **Use it at your own risk.**
