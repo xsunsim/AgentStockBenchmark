@@ -279,5 +279,8 @@ def find_research_run(results_repo: Path, run_id: str) -> Path:
     if not matches:
         raise FileNotFoundError(f"research run not found: {run_id}")
     if len(matches) > 1:
-        raise ValueError(f"research run id is ambiguous: {run_id}")
+        match_list = "\n".join(f"- {m.parent.name}/{m.name}" for m in matches)
+        raise ValueError(
+            f"research run id {run_id!r} is ambiguous. Matches found:\n{match_list}"
+        )
     return matches[0]

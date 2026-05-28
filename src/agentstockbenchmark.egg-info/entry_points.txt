@@ -1,0 +1,4 @@
+[console_scripts]
+agentstockbenchmark = agentstockbenchmark.cli:main
+asb = agentstockbenchmark.cli:main
+asb-mcp = agentstockbenchmark.mcp_server.server:mcp.run

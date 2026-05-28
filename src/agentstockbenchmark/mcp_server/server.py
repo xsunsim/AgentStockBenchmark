@@ -140,6 +140,20 @@ def list_available_strategies(prompt_id: str | None = None) -> list[str]:
     except Exception as e:
         return [f"Error listing strategies: {str(e)}"]
 
+def _is_trading_day(date: dt.date) -> bool:
+    """Checks if a date is likely a trading day (not weekend or major US holiday)."""
+    if date.weekday() >= 5:
+        return False
+    # Simple check for major US market holidays
+    holidays = {
+        (1, 1),   # New Year's
+        (7, 4),   # Independence Day
+        (12, 25), # Christmas
+    }
+    if (date.month, date.day) in holidays:
+        return False
+    return True
+
 @mcp.tool()
 def run_strategy_on_date(strategy_id: str, date: str) -> str:
     """
@@ -155,8 +169,29 @@ def run_strategy_on_date(strategy_id: str, date: str) -> str:
         from agentstockbenchmark.workflow import default_data_dir
         
         run_date = parse_date(date)
+        
+        # Validation for non-trading days
+        if run_date > dt.date.today():
+            return f"FAILED: {date} is in the future. Data is not yet available."
+        if run_date.weekday() >= 5:
+            return f"FAILED: {date} is a weekend. Markets are closed."
+        if not _is_trading_day(run_date):
+            return f"FAILED: {date} appears to be a market holiday."
+
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
         
+        # Check if data exists
+        close_path = data_dir / "close.parquet"
+        if close_path.exists():
+            import pandas as pd
+            close = pd.read_parquet(close_path)
+            if pd.Timestamp(run_date) not in close.index:
+                # Try refreshing data first
+                refresh_market_data(date)
+                close = pd.read_parquet(close_path)
+                if pd.Timestamp(run_date) not in close.index:
+                    return f"FAILED: No market data found for {date} in local parquets even after refresh."
+
         report = generate_rankings(
             start=run_date,
             end=run_date,
@@ -166,17 +201,17 @@ def run_strategy_on_date(strategy_id: str, date: str) -> str:
             overwrite=True
         )
         
-        status = report.get(date, {}).get(strategy_id, "FAILED")
-        return f"Strategy {strategy_id} run for {date}. Status: {status}"
+        res = report.get(date, {}).get(strategy_id, "FAILED")
+        if res == "FAILED":
+            return f"FAILED: Strategy execution failed for {strategy_id} on {date}. Check model output formatting."
+        return f"Strategy {strategy_id} run for {date}. Status: {res}"
     except Exception as e:
         return f"Error running strategy: {str(e)}"
 
 def _get_previous_trading_date(date: dt.date) -> dt.date:
-    """Simple helper to find the likely previous trading day (skipping weekends)."""
-    # For a production system, this should ideally check a real holiday calendar
-    # or the actual data availability in parquets.
+    """Finds the likely previous trading day."""
     prev = date - dt.timedelta(days=1)
-    while prev.weekday() >= 5:  # Saturday or Sunday
+    while not _is_trading_day(prev):
         prev -= dt.timedelta(days=1)
     return prev
 
@@ -184,7 +219,7 @@ def _get_previous_trading_date(date: dt.date) -> dt.date:
 def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 10) -> dict[str, Any]:
     """
     Returns top stock positions for a strategy to be traded ON a specific date.
-    AUTO-HEALING: Automatically handles the mapping from trading date to data date.
+    AUTO-HEALING: Automatically handles mapping and looks back for valid data if needed.
     
     Args:
         strategy_id: The ID of the strategy.
@@ -196,31 +231,46 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
     
     try:
         trading_date = parse_date(target_trading_date)
-        # To trade ON target_trading_date, we need the ranking from the PREVIOUS trading day
-        ranking_date = _get_previous_trading_date(trading_date)
-        ranking_date_str = date_id(ranking_date)
         
-        portfolio_path = DEFAULT_RESULTS_REPO / "portfolios" / ranking_date_str / f"{strategy_id}.csv"
+        # Search backwards for the most recent valid ranking date
+        current_search_date = trading_date
+        max_lookback = 7
+        ranking_date = None
+        portfolio_path = None
         
-        # 1. If portfolio missing, check/refresh market data and rankings
-        if not portfolio_path.exists():
-            print(f"Portfolio missing for {strategy_id} for trading on {target_trading_date}. Attempting auto-healing for ranking date {ranking_date_str}...")
+        for i in range(max_lookback):
+            current_search_date = _get_previous_trading_date(current_search_date)
+            ranking_date_str = date_id(current_search_date)
+            path = DEFAULT_RESULTS_REPO / "portfolios" / ranking_date_str / f"{strategy_id}.csv"
             
-            # Step A: Refresh Market Data for the ranking date
-            refresh_status = refresh_market_data(ranking_date_str)
-            if "Error:" in refresh_status or "not closed" in refresh_status:
-                return {"error": f"Cannot get positions for {target_trading_date}: {refresh_status}"}
+            # 1. If it exists, we are done
+            if path.exists():
+                portfolio_path = path
+                ranking_date = current_search_date
+                break
             
-            # Step B: Run Strategy
-            run_status = run_strategy_on_date(strategy_id, ranking_date_str)
-            if "FAILED" in run_status or "Error" in run_status:
-                return {"error": run_status}
-                
-            # Step C: Build Portfolio
-            build_portfolios(results_repo=DEFAULT_RESULTS_REPO, ranking_date=ranking_date)
-            
-        if not portfolio_path.exists():
-            return {"error": f"Failed to generate portfolio for {strategy_id} for trading on {target_trading_date}."}
+            # 2. If it doesn't exist, and it's the MOST RECENT possible trading day, try to generate it
+            if i == 0: 
+                print(f"Attempting auto-heal for ranking date {ranking_date_str}...")
+                refresh_status = refresh_market_data(ranking_date_str)
+                # If data was found or downloaded
+                if "Error:" not in refresh_status and "not closed" not in refresh_status:
+                    run_status = run_strategy_on_date(strategy_id, ranking_date_str)
+                    if "PASS" in run_status or "run for" in run_status:
+                        build_portfolios(results_repo=DEFAULT_RESULTS_REPO, ranking_date=current_search_date)
+                        if path.exists():
+                            portfolio_path = path
+                            ranking_date = current_search_date
+                            break
+        
+        if not portfolio_path:
+            return {
+                "error": (
+                    f"Could not find or generate valid rankings for trading on {target_trading_date}. "
+                    f"Looked back up to {max_lookback} days. This usually happens if market data "
+                    "for the previous trading days is missing (e.g. holidays) or if strategies failed."
+                )
+            }
             
         df = pd.read_csv(portfolio_path)
         df = df.sort_values("position_dollars", ascending=False)
@@ -231,10 +281,11 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         return {
             "strategy_id": strategy_id,
             "target_trading_date": target_trading_date,
-            "data_cutoff_date": ranking_date_str,
+            "data_cutoff_date": date_id(ranking_date),
             "top_longs": top_longs,
             "top_shorts": top_shorts,
-            "instructions": f"Enter these positions at the market open on {target_trading_date}."
+            "instructions": f"Enter these positions at the market open on {target_trading_date}. "
+                            f"Generated using data finalized on {date_id(ranking_date)}."
         }
     except Exception as e:
         return {"error": str(e)}
@@ -295,6 +346,7 @@ def run_research_backtest(
 def analyze_results(run_id: str) -> dict[str, Any]:
     """
     Analyzes and summarizes the results of a research backtest.
+    If multiple runs match the ID, an error with matches is returned.
     
     Args:
         run_id: The unique ID of the research run.
@@ -305,6 +357,7 @@ def analyze_results(run_id: str) -> dict[str, Any]:
         with open(analysis_path, 'r') as f:
             return json.load(f)
     except Exception as e:
+        # Return the exception message directly as it now contains the match list
         return {"error": str(e)}
 
 @mcp.tool()

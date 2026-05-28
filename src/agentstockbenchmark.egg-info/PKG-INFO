@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: agentstockbenchmark
+Version: 0.1.0
+Summary: Agent stock ranking and portfolio benchmark engine
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: html5lib
+Requires-Dist: lxml
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: pyarrow
+Requires-Dist: scipy
+Requires-Dist: yfinance
+Requires-Dist: mcp
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Dynamic: license-file
