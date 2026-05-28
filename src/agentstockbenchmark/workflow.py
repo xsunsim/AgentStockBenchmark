@@ -163,7 +163,9 @@ def run_daily(
                 )
             )
 
-        write_strategy_manifest(results_repo=results_repo, strategies_dir=strategies_dir)
+        write_strategy_manifest(
+            results_repo=results_repo, strategies_dir=strategies_dir
+        )
         artifact_manifest_path = write_artifact_manifest(results_repo, run_date)
         audit_report = audit_date(run_date, results_repo, data_dir)
         steps.append(_step("audit", "PASS", report=audit_report))
@@ -333,23 +335,23 @@ def repair_date(
     """Repair a specific date by re-downloading data and refreshing accounting."""
     started_at = utc_now()
     print(f"Starting repair workflow for {date}...")
-    
+
     # 1. Repair Market Data (Download + Merge)
     repair_daily_market_data(date, results_repo)
-    
+
     # 2. Refresh Accounting
     # We need to find all ranking dates that use this date as an entry or exit date.
     # Usually, t uses t+1 and t+2. So rankings from t-1 and t-2 are affected.
     print("Refreshing accounting to reflect repaired data...")
-    counts = update_accounting(
+    update_accounting(
         results_repo=results_repo,
-        rebuild_portfolios=False, # Rankings haven't changed
+        rebuild_portfolios=False,  # Rankings haven't changed
     )
-    
+
     # 3. Update Leaderboard
     build_metrics(results_repo=results_repo)
     build_leaderboard(results_repo=results_repo)
-    
+
     return {
         "run_date": date_id(date),
         "status": "PASS",

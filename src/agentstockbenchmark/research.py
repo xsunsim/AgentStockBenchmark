@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import shutil
 from pathlib import Path
 
@@ -114,7 +113,9 @@ def research_backtest(
     metrics = build_metrics(results_repo=run_dir, as_of=end)
     leaderboard = {}
     if not metrics.empty:
-        leaderboard = {key: str(path) for key, path in build_leaderboard(run_dir).items()}
+        leaderboard = {
+            key: str(path) for key, path in build_leaderboard(run_dir).items()
+        }
 
     payload = {
         "schema_version": 1,
@@ -253,7 +254,7 @@ def resolve_research_strategies_dir(
 
 def copy_universe_files(
     source_results_repo: Path,
-    run_dir: Path,
+    run_dir:Path,
     start: dt.date,
     end: dt.date,
 ) -> None:

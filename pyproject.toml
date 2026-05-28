@@ -11,6 +11,7 @@ dependencies = [
   "pyarrow",
   "scipy",
   "yfinance",
+  "mcp",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,7 @@ dev = [
 [project.scripts]
 agentstockbenchmark = "agentstockbenchmark.cli:main"
 asb = "agentstockbenchmark.cli:main"
+asb-mcp = "agentstockbenchmark.mcp_server.server:mcp.run"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

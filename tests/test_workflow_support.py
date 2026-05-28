@@ -17,7 +17,10 @@ from agentstockbenchmark.research import (
 )
 from agentstockbenchmark.stage2.market_data import merge_daily_csvs_into_parquets
 from agentstockbenchmark.stage2.market_data import ensure_cached_daily_from_parquets
-from agentstockbenchmark.stage3.accounting import update_accounting, write_or_append_daily_pnl
+from agentstockbenchmark.stage3.accounting import (
+    update_accounting,
+    write_or_append_daily_pnl,
+)
 from agentstockbenchmark.workflow import backfill, run_daily
 
 
@@ -80,7 +83,9 @@ def test_accounting_skips_zero_prices_and_writes_compact_dates():
             ]
         ).to_csv(portfolio_dir / "20260519__Fixture.csv", index=False)
 
-        counts = update_accounting(root, data_dir=data_dir, through=dt.date(2026, 5, 21))
+        counts = update_accounting(
+            root, data_dir=data_dir, through=dt.date(2026, 5, 21)
+        )
         pnl = pd.read_csv(root / "accounting" / "daily_pnl" / "20260519__Fixture.csv")
 
         assert counts == {"20260519": 1}
@@ -311,6 +316,7 @@ def test_research_backtest_stays_in_research_namespace():
         assert (run_dir / "rankings" / "20260519" / "20260519__Fixture.csv").exists()
         assert not (root / "rankings").exists()
 
+
 def test_artifact_manifest_excludes_mutable_aggregate_outputs():
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -412,17 +418,17 @@ def test_research_workspace_and_promote_do_not_fall_back_to_live_strategy():
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         run_dir = generate_strategies_workspace(
-            prompt_id="20260519",
+            prompt_id="20260517",
             results_repo=root,
             run_id="testrun",
             reference_root=root / "missing_reference",
         )
-        assert (run_dir / "strategies" / "20260519").is_dir()
+        assert (run_dir / "strategies" / "20260517").is_dir()
 
         try:
             promote_research_strategy(
                 run_id="testrun",
-                strategy_id="20260519__DoesNotExist",
+                strategy_id="20260517__DoesNotExist",
                 results_repo=root,
             )
         except FileNotFoundError:

@@ -296,14 +296,15 @@ class HtmlTableParser(HTMLParser):
                 self._current_table = None
             self._table_depth -= 1
 
-def fetch_daily_ohlcv(tickers: list[str], date: dt.date) -> pd.DataFrame:
+def fetch_daily_ohlcv(tickers: list[str], date: dt.date, max_retries: int = 3) -> pd.DataFrame:
     import yfinance as yf
 
     start = date.isoformat()
     end = (date + dt.timedelta(days=1)).isoformat()
     
-    backoff = 10
-    while True:
+    backoff = 5
+    retries = 0
+    while retries < max_retries:
         f = io.StringIO()
         with redirect_stderr(f):
             try:
@@ -318,20 +319,26 @@ def fetch_daily_ohlcv(tickers: list[str], date: dt.date) -> pd.DataFrame:
             except Exception as exc:
                 print(f"Exception during download for {date}: {exc}. Retrying in {backoff}s...")
                 time.sleep(backoff)
-                backoff = min(backoff * 2, 300)
+                backoff = min(backoff * 2, 60)
+                retries += 1
                 continue
 
         err_output = f.getvalue()
         if "YFRateLimitError" in err_output or "Too Many Requests" in err_output:
             print(f"Rate limited by yfinance for {date}. Retrying in {backoff}s...")
             time.sleep(backoff)
-            backoff = min(backoff * 2, 300)
+            backoff = min(backoff * 2, 60)
+            retries += 1
             continue
             
         if raw.empty:
+            if date >= dt.date.today():
+                print(f"Market data not yet available for {date} (today or future).")
+                return pd.DataFrame()
             print(f"Warning: yfinance returned empty data for {date}. Retrying in {backoff}s...")
             time.sleep(backoff)
-            backoff = min(backoff * 2, 300)
+            backoff = min(backoff * 2, 60)
+            retries += 1
             continue
             
         rows = []
@@ -341,12 +348,18 @@ def fetch_daily_ohlcv(tickers: list[str], date: dt.date) -> pd.DataFrame:
                 rows.append(row)
         
         if not rows:
-            print(f"Warning: No valid rows extracted for {date}. Check for delistings or market holidays. Retrying in {backoff}s...")
+            if date >= dt.date.today():
+                return pd.DataFrame()
+            print(f"Warning: No valid rows extracted for {date}. Retrying in {backoff}s...")
             time.sleep(backoff)
-            backoff = min(backoff * 2, 300)
+            backoff = min(backoff * 2, 60)
+            retries += 1
             continue
                 
         return pd.DataFrame(rows)
+    
+    print(f"Max retries reached for {date}. Returning empty results.")
+    return pd.DataFrame()
 
 def merge_daily_csvs_into_parquets(
     results_repo: Path,
