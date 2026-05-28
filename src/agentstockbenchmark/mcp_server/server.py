@@ -13,7 +13,7 @@ from agentstockbenchmark.research import (
     promote_research_strategy,
 )
 from agentstockbenchmark.workflow import backfill, run_daily
-from agentstockbenchmark.dates import parse_date, date_id
+from agentstockbenchmark.dates import parse_date, date_id, iter_dates
 from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 
 mcp = FastMCP("AgentStockBenchmark")
@@ -187,17 +187,16 @@ def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
     try:
         from agentstockbenchmark.stage2.rankings import generate_rankings
         from agentstockbenchmark.workflow import default_data_dir
-        from agentstockbenchmark.stage1.strategies import find_strategy
+        from agentstockbenchmark.stage1.strategies import list_strategies
         
         run_date, error = _validate_trading_date(date)
         if error:
             return error
 
-        # Check if strategy exists
-        try:
-            find_strategy(strategy_id)
-        except Exception:
-            return {"error": f"Strategy {strategy_id!r} not found."}
+        # Check if strategy exists (supports glob)
+        strategies = list_strategies(selector=strategy_id)
+        if not strategies:
+            return {"error": f"Strategy matching {strategy_id!r} not found."}
 
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
         
@@ -222,10 +221,11 @@ def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
             overwrite=True
         )
         
-        res = report.get(date, {}).get(strategy_id, "FAILED")
-        if res == "FAILED":
+        date_id_str = date_id(run_date)
+        res = report.get(date_id_str, {})
+        if not res:
             return {"status": "FAIL", "error": f"Strategy execution failed for {strategy_id} on {date}. Check model output formatting."}
-        return {"status": "SUCCESS", "strategy_id": strategy_id, "date": date, "result": res}
+        return {"status": "SUCCESS", "date": date_id_str, "results": res}
     except Exception as e:
         return {"status": "FAIL", "error": f"Error running strategy: {str(e)}"}
 
@@ -248,15 +248,20 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         top_n: Number of top long/short positions to return.
     """
     from agentstockbenchmark.stage3.portfolio import build_portfolios
-    from agentstockbenchmark.stage1.strategies import find_strategy
+    from agentstockbenchmark.stage1.strategies import list_strategies
     import pandas as pd
     
     try:
         # 0. Validate strategy existence
-        try:
-            find_strategy(strategy_id)
-        except Exception:
-            return {"error": f"Strategy {strategy_id!r} not found."}
+        strategies = list_strategies(selector=strategy_id)
+        if not strategies:
+            return {"error": f"Strategy matching {strategy_id!r} not found."}
+        
+        # If multiple matches, we can't reliably auto-heal for all.
+        if len(strategies) > 1:
+            return {"error": f"Strategy selector {strategy_id!r} is ambiguous. Matches found: {[s.strategy_id for s in strategies]}"}
+        
+        exact_strategy_id = strategies[0].strategy_id
 
         # 1. Validate date
         try:
@@ -276,19 +281,19 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         for i in range(max_lookback):
             current_search_date = _get_previous_trading_date(current_search_date)
             ranking_date_str = date_id(current_search_date)
-            path = DEFAULT_RESULTS_REPO / "portfolios" / ranking_date_str / f"{strategy_id}.csv"
+            path = DEFAULT_RESULTS_REPO / "portfolios" / ranking_date_str / f"{exact_strategy_id}.csv"
             
-            # If it exists, we are done
+            # 1. If it exists, we are done
             if path.exists():
                 portfolio_path = path
                 ranking_date = current_search_date
                 break
             
-            # If it doesn't exist, and it's the MOST RECENT possible trading day, try to generate it
+            # 2. If it doesn't exist, and it's the MOST RECENT possible trading day, try to generate it
             if i == 0: 
                 refresh_res = refresh_market_data(ranking_date_str)
                 if refresh_res.get("status") == "SUCCESS":
-                    run_res = run_strategy_on_date(strategy_id, ranking_date_str)
+                    run_res = run_strategy_on_date(exact_strategy_id, ranking_date_str)
                     if run_res.get("status") == "SUCCESS":
                         build_portfolios(results_repo=DEFAULT_RESULTS_REPO, ranking_date=current_search_date)
                         if path.exists():
@@ -312,7 +317,7 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         top_shorts = df.tail(top_n)[["ticker", "position_dollars", "score"]].to_dict(orient="records")
         
         return {
-            "strategy_id": strategy_id,
+            "strategy_id": exact_strategy_id,
             "target_trading_date": target_trading_date,
             "data_cutoff_date": date_id(ranking_date),
             "top_longs": top_longs,
@@ -357,6 +362,7 @@ def run_research_backtest(
 ) -> dict[str, Any]:
     """
     Runs a backtest on strategies in a research workspace.
+    CAUTION: Running many strategies over long periods may time out.
     
     Args:
         prompt_id: The ID of the prompt/workspace.
@@ -367,9 +373,23 @@ def run_research_backtest(
     """
     try:
         from agentstockbenchmark.workflow import default_data_dir
+        from agentstockbenchmark.stage1.strategies import list_strategies
         
         start = parse_date(start_date)
         end = parse_date(end_date)
+        
+        # Estimate work to prevent timeout
+        num_days = len(list(iter_dates(start, end)))
+        # Check num strategies
+        # We need to resolve the strategies_dir first
+        from agentstockbenchmark.research import research_run_dir, resolve_research_strategies_dir
+        actual_run_id = run_id or "latest" # This is a placeholder, resolve_research_strategies_dir handles None
+        # Actually research_backtest generates a NEW run_id if None.
+        
+        # For simplicity, let's just warn about large ranges
+        if num_days > 30 and strategy_selector is None:
+             print("Warning: Large backtest detected. This may time out.")
+
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
         
         run_dir = research_backtest(
@@ -399,6 +419,7 @@ def analyze_results(run_id: str) -> dict[str, Any]:
         with open(analysis_path, 'r') as f:
             return json.load(f)
     except Exception as e:
+        # Return the exception message directly as it now contains the match list
         return {"error": str(e)}
 
 @mcp.tool()
@@ -427,7 +448,8 @@ def run_production_daily(date: str) -> dict[str, Any]:
     try:
         run_date, error = _validate_trading_date(date)
         if error:
-            return error
+            # Re-format error to match JSON expectation but include status: FAIL
+            return {"status": "FAIL", **error}
             
         report = run_daily(run_date=run_date)
         return report

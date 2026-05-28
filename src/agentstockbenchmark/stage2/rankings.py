@@ -37,19 +37,16 @@ def generate_rankings(
     all_dates = trading_dates(tables["close"].index)
     ranking_dates = [date for date in all_dates if start <= date <= end]
 
-    if strategy_selector:
-        strategies = [
-            find_strategy(
-                strategy_selector,
-                strategies_dir=strategies_dir,
-                prompt_id=prompt_id,
-            )
-        ]
-    else:
-        strategies = list_strategies(strategies_dir=strategies_dir, prompt_id=prompt_id)
+    # Use list_strategies with the selector to support both exact IDs and glob patterns
+    strategies = list_strategies(
+        strategies_dir=strategies_dir, 
+        prompt_id=prompt_id, 
+        selector=strategy_selector
+    )
 
     if not strategies:
-        raise ValueError("no strategies found")
+        selector_msg = f"matching {strategy_selector!r}" if strategy_selector else ""
+        raise ValueError(f"no strategies found {selector_msg}".strip())
 
     report: dict[str, dict[str, str]] = {}
     for ranking_date in ranking_dates:

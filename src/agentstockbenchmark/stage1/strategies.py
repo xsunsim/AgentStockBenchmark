@@ -26,9 +26,12 @@ class StrategyRef:
 def list_strategies(
     strategies_dir: Path = STRATEGIES_DIR,
     prompt_id: str | None = None,
+    selector: str | None = None,
 ) -> list[StrategyRef]:
     if not strategies_dir.exists():
         return []
+
+    import fnmatch
 
     prompt_dirs = [strategies_dir / prompt_id] if prompt_id else sorted(
         p for p in strategies_dir.iterdir() if p.is_dir()
@@ -41,14 +44,19 @@ def list_strategies(
         for strategy_dir in sorted(p for p in prompt_dir.iterdir() if p.is_dir()):
             strategy_path = strategy_dir / "strategy.py"
             if strategy_path.exists():
-                strategies.append(
-                    StrategyRef(
-                        prompt_id=prompt_dir.name,
-                        strategy_slug=strategy_dir.name,
-                        path=strategy_path,
-                        metadata_path=strategy_dir / "strategy.json",
-                    )
+                ref = StrategyRef(
+                    prompt_id=prompt_dir.name,
+                    strategy_slug=strategy_dir.name,
+                    path=strategy_path,
+                    metadata_path=strategy_dir / "strategy.json",
                 )
+                
+                if selector:
+                    # Match against ID or slug using glob pattern
+                    if fnmatch.fnmatch(ref.strategy_id, selector) or fnmatch.fnmatch(ref.strategy_slug, selector):
+                        strategies.append(ref)
+                else:
+                    strategies.append(ref)
     return strategies
 
 
@@ -57,16 +65,17 @@ def find_strategy(
     strategies_dir: Path = STRATEGIES_DIR,
     prompt_id: str | None = None,
 ) -> StrategyRef:
-    matches = []
-    for ref in list_strategies(strategies_dir=strategies_dir, prompt_id=prompt_id):
-        if selector in {ref.strategy_id, ref.strategy_slug}:
-            matches.append(ref)
+    # Use exact match first, then fall back to glob if no exact match found
+    # but the glob implementation in list_strategies already covers both.
+    # However, find_strategy usually implies finding a SINGLE strategy.
+    
+    matches = list_strategies(strategies_dir=strategies_dir, prompt_id=prompt_id, selector=selector)
 
     if not matches:
         raise ValueError(f"strategy not found: {selector}")
     if len(matches) > 1:
         names = ", ".join(ref.strategy_id for ref in matches)
-        raise ValueError(f"strategy selector is ambiguous: {selector} ({names})")
+        raise ValueError(f"strategy selector {selector!r} is ambiguous. Matches found: {names}")
     return matches[0]
 
 
