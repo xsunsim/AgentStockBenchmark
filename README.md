@@ -73,7 +73,8 @@ The absolute most reliable way to install and run this server is using `uvx`. Th
    * Mac/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
    * Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
-2. Add this exact block to your `claude_desktop_config.json`:
+2. Add this exact block to your `claude_desktop_config.json`. 
+*(Note: Replace `/path/to/your/clone` with the actual folder where you cloned this repository, e.g., `/Users/xiaoyusun/AgentStockBenchmark`)*
 ```json
 {
   "mcpServers": {
@@ -84,12 +85,14 @@ The absolute most reliable way to install and run this server is using `uvx`. Th
         "agentstockbenchmark",
         "asb-mcp"
       ],
-      "env": {}
+      "env": {
+        "ASB_PROJECT_ROOT": "/path/to/your/clone"
+      }
     }
   }
 }
 ```
-*(When you restart Claude, `uvx` will automatically download the package from PyPI, set up an isolated environment, and run the server).*
+*(When you restart Claude, `uvx` will automatically download the package from PyPI, set up an isolated environment, and run the server. The `ASB_PROJECT_ROOT` environment variable tells the isolated server where to find your local `prompts` and `strategies` folders).*
 
 #### 2. Advanced: Manual pip Installation
 If you prefer not to use `uvx`, you can install it globally:
