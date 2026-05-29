@@ -70,11 +70,14 @@ def _sync_results_repo(timeout_seconds: int = 30):
             if needs_seed:
                 import tempfile
                 with tempfile.TemporaryDirectory() as tmpdir:
+                    # Windows git clone often fails if cloning directly into the root of a TemporaryDirectory
+                    # because the directory is locked or not considered "empty" by git.
+                    clone_target = Path(tmpdir) / "repo"
                     engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
-                    subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, tmpdir], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                    subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, str(clone_target)], check=True, capture_output=True, timeout=timeout_seconds, env=env)
                     
-                    tmp_prompts = Path(tmpdir) / "prompts"
-                    tmp_strategies = Path(tmpdir) / "strategies"
+                    tmp_prompts = clone_target / "prompts"
+                    tmp_strategies = clone_target / "strategies"
                     
                     if tmp_prompts.exists():
                         PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
