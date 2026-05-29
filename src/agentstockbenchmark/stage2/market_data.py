@@ -313,8 +313,9 @@ def fetch_daily_ohlcv(tickers: list[str], date: dt.date, max_retries: int = 3) -
                     start=start,
                     end=end,
                     auto_adjust=True,
-                    threads=True,
+                    threads=False,
                     progress=False,
+                    timeout=10,
                 )
             except Exception as exc:
                 print(f"Exception during download for {date}: {exc}. Retrying in {backoff}s...")

@@ -383,6 +383,7 @@ def run_research_backtest(
         from agentstockbenchmark.workflow import default_data_dir
         from agentstockbenchmark.stage1.strategies import list_strategies
         from agentstockbenchmark.research import resolve_research_strategies_dir, find_research_run
+        from agentstockbenchmark.settings import STRATEGIES_DIR
         
         start = parse_date(start_date)
         end = parse_date(end_date)
@@ -425,6 +426,13 @@ def run_research_backtest(
             strategy_selector=strategy_selector
         )
         return {"status": "SUCCESS", "results_workspace": str(run_dir)}
+    except ValueError as e:
+        if "no strategies found" in str(e).lower():
+            return {
+                "error": "No strategies found in the workspace.",
+                "hint": f"Please ensure you have generated and placed strategy.py files in the workspace (e.g., under research/{prompt_id}/{run_id}/strategies/) before running a backtest."
+            }
+        return {"error": f"Error running backtest: {str(e)}"}
     except Exception as e:
         return {"error": f"Error running backtest: {str(e)}"}
 
