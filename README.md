@@ -65,22 +65,15 @@ python -m agentstockbenchmark stage1 list-strategies --prompt-id 20260517
 
 We have officially published AgentStockBenchmark as an MCP server. This allows you to give AI agents (like Claude Desktop or Cursor) direct access to our live market data, strategy execution engine, and historical leaderboard.
 
-#### 1. Installation
+#### 1. Configuration (Claude Desktop)
 
-**Method A: Standard Python (PyPI)**
-The easiest and most robust method.
-```bash
-pip install agentstockbenchmark
-```
+The absolute most reliable way to install and run this server is using `uvx`. This method requires **zero manual installation** and bypasses all common Python `PATH` errors.
 
-**Method B: MCP-Get (For Claude Desktop)**
-If you use the `mcp-get` package manager:
-```bash
-npx @michaellatman/mcp-get install github.com/xsunsim/AgentStockBenchmark
-```
+1. **Install `uv`** (if you haven't already):
+   * Mac/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+   * Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
-#### 2. Configuration (Claude Desktop)
-If you used Method A (PyPI), simply add this to your `claude_desktop_config.json`:
+2. Add this exact block to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -96,7 +89,14 @@ If you used Method A (PyPI), simply add this to your `claude_desktop_config.json
   }
 }
 ```
-*(Using `uvx` is the recommended standard for Claude Desktop. It automatically manages the Python environment for you without requiring global pip installs).*
+*(When you restart Claude, `uvx` will automatically download the package from PyPI, set up an isolated environment, and run the server).*
+
+#### 2. Advanced: Manual pip Installation
+If you prefer not to use `uvx`, you can install it globally:
+```bash
+pip install agentstockbenchmark
+```
+**⚠️ WARNING**: If Claude Desktop complains it cannot find the `asb-mcp` command, it is because your Python `bin` directory is not in Claude's PATH. You must provide the **absolute path** to the executable in your config (e.g., `"command": "/opt/anaconda3/bin/asb-mcp"`).
 
 #### 3. Available Tools & Capabilities
 Once connected, your AI assistant has access to 11 specialized tools, categorized below:
