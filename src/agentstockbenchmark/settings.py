@@ -6,6 +6,8 @@ from pathlib import Path
 _cwd = Path.cwd()
 _env_root = os.environ.get("ASB_PROJECT_ROOT")
 
+DEFAULT_RESULTS_REPO = Path(os.environ.get("ASB_RESULTS_REPO", Path.home() / "bmr_codex"))
+
 if _env_root:
     PROJECT_ROOT = Path(_env_root)
 elif (_cwd / "prompts").exists() and (_cwd / "strategies").exists():
@@ -19,9 +21,8 @@ else:
     elif _home_repo2.exists() and (_home_repo2 / "prompts").exists():
         PROJECT_ROOT = _home_repo2
     else:
-        PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DEFAULT_RESULTS_REPO = Path(os.environ.get("ASB_RESULTS_REPO", Path.home() / "bmr_codex"))
+        # Fallback to the results repo for zero-install users!
+        PROJECT_ROOT = DEFAULT_RESULTS_REPO
 
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 STRATEGIES_DIR = PROJECT_ROOT / "strategies"

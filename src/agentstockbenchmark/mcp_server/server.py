@@ -58,36 +58,43 @@ def _sync_results_repo(timeout_seconds: int = 30):
     if success:
         # "Batteries Included" logic: Seed the local project with the official prompts and strategies
         try:
-            from agentstockbenchmark.settings import PROJECT_ROOT, STRATEGIES_DIR, PROMPTS_DIR
+            from agentstockbenchmark.settings import STRATEGIES_DIR, PROMPTS_DIR
             
-            # 1. Sync Strategies
-            source_strategies = target_dir / "src" / "agentstockbenchmark" / "strategies"
-            # In the results repo, strategies might just be in the root 'strategies' dir
-            if not source_strategies.exists():
-                 source_strategies = target_dir / "strategies"
-            
-            if source_strategies.exists():
-                STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
-                for item in source_strategies.iterdir():
-                    if item.is_dir() and not item.name.startswith("."):
-                        dest_item = STRATEGIES_DIR / item.name
-                        if not dest_item.exists():
-                            shutil.copytree(item, dest_item)
+            # If the directories are completely empty or missing, download them from the engine repo
+            needs_seed = False
+            if not PROMPTS_DIR.exists() or not any(PROMPTS_DIR.iterdir()):
+                needs_seed = True
+            if not STRATEGIES_DIR.exists() or not any(STRATEGIES_DIR.iterdir()):
+                needs_seed = True
 
-            # 2. Sync Prompts
-            source_prompts = target_dir / "prompts"
-            if source_prompts.exists():
-                PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-                for item in source_prompts.iterdir():
-                    if item.is_dir() and not item.name.startswith("."):
-                        dest_item = PROMPTS_DIR / item.name
-                        if not dest_item.exists():
-                            shutil.copytree(item, dest_item)
-                            
+            if needs_seed:
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
+                    subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, tmpdir], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                    
+                    tmp_prompts = Path(tmpdir) / "prompts"
+                    tmp_strategies = Path(tmpdir) / "strategies"
+                    
+                    if tmp_prompts.exists():
+                        PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+                        for item in tmp_prompts.iterdir():
+                            dest_item = PROMPTS_DIR / item.name
+                            if not dest_item.exists():
+                                shutil.copytree(item, dest_item) if item.is_dir() else shutil.copy2(item, dest_item)
+
+                    if tmp_strategies.exists():
+                        STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
+                        for item in tmp_strategies.iterdir():
+                            dest_item = STRATEGIES_DIR / item.name
+                            if not dest_item.exists():
+                                shutil.copytree(item, dest_item) if item.is_dir() else shutil.copy2(item, dest_item)
+                                
         except Exception as e:
-            print(f"Warning: Failed to seed local environment from results repo: {e}")
+            print(f"Warning: Failed to seed local environment from engine repo: {e}")
 
     return success
+
 
 def _is_trading_day(date: dt.date) -> bool:
     """Checks if a date is likely a trading day (not weekend or major US holiday)."""
