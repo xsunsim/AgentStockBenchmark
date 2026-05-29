@@ -6,7 +6,7 @@ from pathlib import Path
 _cwd = Path.cwd()
 _env_root = os.environ.get("ASB_PROJECT_ROOT")
 
-DEFAULT_RESULTS_REPO = Path(os.environ.get("ASB_RESULTS_REPO", Path.home() / "bmr_codex"))
+DEFAULT_RESULTS_REPO = Path(os.environ.get("ASB_RESULTS_REPO", Path.home() / "AgentStockBenchmarkResults"))
 
 if _env_root:
     PROJECT_ROOT = Path(_env_root)
