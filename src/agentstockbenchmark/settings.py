@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RESULTS_REPO = Path.home() / "bmr_codex"
+_cwd = Path.cwd()
+_env_root = os.environ.get("ASB_PROJECT_ROOT")
+
+if _env_root:
+    PROJECT_ROOT = Path(_env_root)
+elif (_cwd / "prompts").exists() and (_cwd / "strategies").exists():
+    PROJECT_ROOT = _cwd
+else:
+    # Try to find common clone locations to be helpful
+    _home_repo = Path.home() / "AgentStockBenchmark"
+    _home_repo2 = Path.home() / "AgentStockBench" / "AgentStockBenchmark"
+    if _home_repo.exists() and (_home_repo / "prompts").exists():
+        PROJECT_ROOT = _home_repo
+    elif _home_repo2.exists() and (_home_repo2 / "prompts").exists():
+        PROJECT_ROOT = _home_repo2
+    else:
+        PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_RESULTS_REPO = Path(os.environ.get("ASB_RESULTS_REPO", Path.home() / "bmr_codex"))
 
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 STRATEGIES_DIR = PROJECT_ROOT / "strategies"

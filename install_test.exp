@@ -1,0 +1,12 @@
+#!/usr/bin/expect -f
+set timeout -1
+spawn npx -y @michaellatman/mcp-get install github.com/xsunsim/AgentStockBenchmark
+expect "Would you like to try installing github.com/xsunsim/AgentStockBenchmark anyway?"
+send "y\r"
+expect "What runtime does this package use?"
+send "\r"
+expect "Would you like to help improve mcp-get"
+send "n\r"
+expect "Would you like to restart the Claude desktop app"
+send "n\r"
+expect eof

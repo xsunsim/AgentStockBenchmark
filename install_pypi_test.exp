@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+set timeout 10
+spawn npx -y @michaellatman/mcp-get install agentstockbenchmark
+expect "Package agentstockbenchmark not found in the curated list."
+expect "Would you like to try installing agentstockbenchmark anyway?"
+send "y\r"
+expect "What runtime does this package use?"
+send "\033\[B\r"  # Arrow down to Python? Actually, let's just send 'Python' or maybe we can't reliably script the arrows.
+expect eof

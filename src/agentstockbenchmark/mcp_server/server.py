@@ -19,9 +19,13 @@ from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 mcp = FastMCP("AgentStockBenchmark")
 
 def _sync_results_repo(timeout_seconds: int = 30):
-    """Helper to sync the local results repo with the remote GitHub repo safely."""
+    """Helper to sync the local results repo with the remote GitHub repo safely.
+    Also acts as a 'batteries-included' initializer, copying default prompts and strategies 
+    from the results repo into the user's local project environment if they are missing.
+    """
     import subprocess
     import os
+    import shutil
     repo_url = "https://github.com/xsunsim/AgentStockBenchmarkResults.git"
     target_dir = DEFAULT_RESULTS_REPO
     
@@ -29,6 +33,7 @@ def _sync_results_repo(timeout_seconds: int = 30):
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
     
+    success = False
     try:
         if not (target_dir / ".git").exists():
             if target_dir.exists() and any(target_dir.iterdir()):
@@ -44,13 +49,45 @@ def _sync_results_repo(timeout_seconds: int = 30):
         else:
             # Existing repo: pull
             subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-        return True
+        success = True
     except subprocess.TimeoutExpired:
         print("Warning: Remote sync timed out.")
-        return False
     except Exception as e:
         print(f"Warning: Remote sync failed: {str(e)}")
-        return False
+
+    if success:
+        # "Batteries Included" logic: Seed the local project with the official prompts and strategies
+        try:
+            from agentstockbenchmark.settings import PROJECT_ROOT, STRATEGIES_DIR, PROMPTS_DIR
+            
+            # 1. Sync Strategies
+            source_strategies = target_dir / "src" / "agentstockbenchmark" / "strategies"
+            # In the results repo, strategies might just be in the root 'strategies' dir
+            if not source_strategies.exists():
+                 source_strategies = target_dir / "strategies"
+            
+            if source_strategies.exists():
+                STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
+                for item in source_strategies.iterdir():
+                    if item.is_dir() and not item.name.startswith("."):
+                        dest_item = STRATEGIES_DIR / item.name
+                        if not dest_item.exists():
+                            shutil.copytree(item, dest_item)
+
+            # 2. Sync Prompts
+            source_prompts = target_dir / "prompts"
+            if source_prompts.exists():
+                PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+                for item in source_prompts.iterdir():
+                    if item.is_dir() and not item.name.startswith("."):
+                        dest_item = PROMPTS_DIR / item.name
+                        if not dest_item.exists():
+                            shutil.copytree(item, dest_item)
+                            
+        except Exception as e:
+            print(f"Warning: Failed to seed local environment from results repo: {e}")
+
+    return success
 
 def _is_trading_day(date: dt.date) -> bool:
     """Checks if a date is likely a trading day (not weekend or major US holiday)."""
@@ -382,8 +419,8 @@ def run_research_backtest(
     try:
         from agentstockbenchmark.workflow import default_data_dir
         from agentstockbenchmark.stage1.strategies import list_strategies
-        from agentstockbenchmark.research import resolve_research_strategies_dir, find_research_run
         from agentstockbenchmark.settings import STRATEGIES_DIR
+        from agentstockbenchmark.research import research_run_dir, resolve_research_strategies_dir, find_research_run
         
         start = parse_date(start_date)
         end = parse_date(end_date)
