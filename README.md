@@ -85,12 +85,18 @@ If you used Method A (PyPI), simply add this to your `claude_desktop_config.json
 {
   "mcpServers": {
     "agent-stock": {
-      "command": "asb-mcp",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "agentstockbenchmark",
+        "asb-mcp"
+      ],
       "env": {}
     }
   }
 }
 ```
+*(Using `uvx` is the recommended standard for Claude Desktop. It automatically manages the Python environment for you without requiring global pip installs).*
 
 #### 3. Available Tools & Capabilities
 Once connected, your AI assistant has access to 11 specialized tools, categorized below:
