@@ -18,10 +18,10 @@ from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 
 mcp = FastMCP("AgentStockBenchmark")
 
-def _sync_results_repo(timeout_seconds: int = 300):
+def _sync_results_repo(timeout_seconds: int = 300, include_data: bool = False):
     """Helper to sync the local results repo with the remote GitHub repo safely.
-    Also acts as a 'batteries-included' initializer, copying default prompts and strategies 
-    from the results repo into the user's local project environment if they are missing.
+    Uses sparse-checkout to prioritize essential metadata (leaderboards, manifests) 
+    over heavy market data.
     """
     import subprocess
     import os
@@ -43,20 +43,28 @@ def _sync_results_repo(timeout_seconds: int = 300):
     
     success = False
     try:
+        # Initialize if not present
         if not (target_dir / ".git").exists():
-            if target_dir.exists() and any(target_dir.iterdir()):
-                # Non-empty dir: initialize and reset
-                subprocess.run(["git", "-C", str(target_dir), "init"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(target_dir), "remote", "add", "origin", repo_url], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(target_dir), "fetch", "origin"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(target_dir), "reset", "--hard", "origin/main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-            else:
-                # Empty or missing dir: clone
-                target_dir.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["git", "clone", "--depth", "1", repo_url, str(target_dir)], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(target_dir), "init"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            subprocess.run(["git", "-C", str(target_dir), "remote", "add", "origin", repo_url], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            
+            # Use modern sparse-checkout if available
+            subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
+            # Essential metadata patterns
+            patterns = ["leaderboard", "manifests", "README.md", "README_CN.md", "daily_digest"]
+            if include_data:
+                patterns.append("data")
+            subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "set"] + patterns, check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            
+            subprocess.run(["git", "-C", str(target_dir), "pull", "--depth", "1", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
         else:
-            # Existing repo: pull
+            # Existing repo: sync patterns
+            if include_data:
+                subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "add", "data"], capture_output=True, timeout=timeout_seconds, env=env)
+            
             subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            
         success = True
     except subprocess.TimeoutExpired:
         print(f"Warning: Remote sync of results repo timed out after {timeout_seconds}s.")
@@ -64,7 +72,6 @@ def _sync_results_repo(timeout_seconds: int = 300):
         print(f"Warning: Remote sync of results repo failed: {str(e)}")
 
     # "Batteries Included" logic: Seed the local project with the official prompts and strategies
-    # This runs INDEPENDENTLY of the results repo success, as long as we have git.
     try:
         from agentstockbenchmark.settings import STRATEGIES_DIR, PROMPTS_DIR
         
@@ -78,11 +85,16 @@ def _sync_results_repo(timeout_seconds: int = 300):
         if needs_seed:
             import tempfile
             with tempfile.TemporaryDirectory() as tmpdir:
-                # Windows git clone often fails if cloning directly into the root of a TemporaryDirectory
-                # because the directory is locked or not considered "empty" by git.
                 clone_target = Path(tmpdir) / "repo"
+                clone_target.mkdir(parents=True, exist_ok=True)
                 engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
-                subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, str(clone_target)], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                
+                # Surgical clone for prompts and strategies only
+                subprocess.run(["git", "-C", str(clone_target), "init"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                subprocess.run(["git", "-C", str(clone_target), "remote", "add", "origin", engine_repo_url], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                subprocess.run(["git", "-C", str(clone_target), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
+                subprocess.run(["git", "-C", str(clone_target), "sparse-checkout", "set", "prompts", "strategies"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                subprocess.run(["git", "-C", str(clone_target), "pull", "--depth", "1", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
                 
                 tmp_prompts = clone_target / "prompts"
                 tmp_strategies = clone_target / "strategies"
@@ -173,7 +185,7 @@ def refresh_market_data(date: str) -> dict[str, Any]:
             return error
 
         # 1. Sync and check if data exists in results repo (authoritative source)
-        _sync_results_repo()
+        _sync_results_repo(include_data=True)
         daily_csv = DEFAULT_RESULTS_REPO / "data" / "raw" / "daily" / f"{date}.csv"
         
         if daily_csv.exists():
