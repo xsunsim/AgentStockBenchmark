@@ -52,7 +52,7 @@ The biggest variable in performance is the scaffolding provided to the agent.
 ### QUICK START
 ```bash
 # Clone the engine
-git clone git@github.com:xsunsim/AgentStockBenchmark.git
+git clone https://github.com/xsunsim/AgentStockBenchmark.git
 cd AgentStockBenchmark
 export PYTHONPATH=src
 
