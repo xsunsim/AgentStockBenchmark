@@ -1,13 +1,9 @@
 {
   "name": "agentstockbenchmark",
-  "version": "0.1.2",
+  "version": "0.1.7",
   "description": "Agent stock ranking and portfolio benchmark engine MCP Server",
-  "command": "uvx",
-  "args": [
-    "--from",
-    "agentstockbenchmark",
-    "asb-mcp"
-  ],
+  "command": "asb-mcp",
+  "args": [],
   "env": {},
   "repository": "https://github.com/xsunsim/AgentStockBenchmark"
 }

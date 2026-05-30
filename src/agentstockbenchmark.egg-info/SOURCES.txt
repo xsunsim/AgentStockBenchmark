@@ -32,6 +32,7 @@ src/agentstockbenchmark/stage3/accounting.py
 src/agentstockbenchmark/stage3/leaderboard.py
 src/agentstockbenchmark/stage3/metrics.py
 src/agentstockbenchmark/stage3/portfolio.py
+tests/test_mcp_results_sync.py
 tests/test_stage1_migration.py
 tests/test_stage2_market_data.py
 tests/test_stage2_rankings.py

@@ -1,32 +1,41 @@
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from agentstockbenchmark.research import (
-    generate_strategies_workspace,
-    research_backtest,
-    analyze_research_run,
-    promote_research_strategy,
-)
-from agentstockbenchmark.workflow import backfill, run_daily
 from agentstockbenchmark.dates import parse_date, date_id, iter_dates
 from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 
 mcp = FastMCP("AgentStockBenchmark")
 
-def _sync_results_repo(timeout_seconds: int = 300, include_parquets: bool = False, specific_raw_date: str | None = None):
+RESULTS_REPO_URL = "https://github.com/xsunsim/AgentStockBenchmarkResults.git"
+BASE_SPARSE_PATTERNS = (
+    "/accounting/",
+    "/daily_digest/",
+    "/leaderboard/",
+    "/manifests/",
+    "/portfolios/",
+    "/prompts/",
+    "/strategies/",
+    "/README.md",
+    "/README_CN.md",
+)
+
+
+def _sync_results_repo(
+    timeout_seconds: int = 300,
+    include_parquets: bool = False,
+    specific_raw_date: str | None = None,
+):
     """Helper to sync the local results repo with the remote GitHub repo safely.
-    Uses sparse-checkout to prioritize essential metadata (leaderboards, manifests) 
+    Uses sparse-checkout to prioritize essential metadata (leaderboards, manifests)
     over heavy market data.
     """
     import subprocess
     import os
-    import shutil
-    
+
     # Check if git is installed first
     try:
         subprocess.run(["git", "--version"], check=True, capture_output=True, timeout=5)
@@ -34,57 +43,79 @@ def _sync_results_repo(timeout_seconds: int = 300, include_parquets: bool = Fals
         print("Warning: 'git' command not found. Please install Git to enable auto-sync.")
         return False
 
-    repo_url = "https://github.com/xsunsim/AgentStockBenchmarkResults.git"
     target_dir = DEFAULT_RESULTS_REPO
-    
+
     # Disable terminal prompts for git to prevent hanging
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
-    
-    success = False
+
+    patterns = list(BASE_SPARSE_PATTERNS)
+    if include_parquets:
+        patterns.append("/data/parquet/")
+    if specific_raw_date:
+        patterns.append(f"/data/raw/daily/{specific_raw_date}.csv")
+
+    def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(target_dir), *args],
+            check=check,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            env=env,
+        )
+
     try:
         # Initialize if not present
-        if not (target_dir / ".git").exists():
+        initialized_repo = not (target_dir / ".git").exists()
+        if initialized_repo:
             target_dir.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["git", "-C", str(target_dir), "init"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-            subprocess.run(["git", "-C", str(target_dir), "remote", "add", "origin", repo_url], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-            
-            # Use modern sparse-checkout if available
-            subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
-            # Essential patterns: metadata + prompts + strategies + leaderboard + portfolios
-            patterns = ["leaderboard", "manifests", "prompts", "strategies", "portfolios", "README.md", "README_CN.md", "daily_digest"]
-            if include_parquets:
-                patterns.append("data/parquet")
-            if specific_raw_date:
-                patterns.append(f"data/raw/daily/{specific_raw_date}.csv")
-                
-            subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "set"] + patterns, check=True, capture_output=True, timeout=timeout_seconds, env=env)
-            
-            subprocess.run(["git", "-C", str(target_dir), "pull", "--depth", "1", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+            run_git("init")
+            run_git("remote", "add", "origin", RESULTS_REPO_URL)
         else:
-            # Existing repo: sync patterns
-            current_patterns = subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "list"], capture_output=True, text=True).stdout.splitlines()
-            
-            new_patterns = []
-            if include_parquets and "data/parquet" not in current_patterns:
-                new_patterns.append("data/parquet")
-            if specific_raw_date:
-                raw_pattern = f"data/raw/daily/{specific_raw_date}.csv"
-                if raw_pattern not in current_patterns:
-                    new_patterns.append(raw_pattern)
-            
-            if new_patterns:
-                subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "add"] + new_patterns, capture_output=True, timeout=timeout_seconds, env=env)
-            
-            subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-            
-        success = True
+            origin = run_git("remote", "get-url", "origin", check=False)
+            if origin.returncode != 0:
+                run_git("remote", "add", "origin", RESULTS_REPO_URL)
+
+        sparse_enabled = run_git(
+            "config", "--bool", "core.sparseCheckout", check=False
+        )
+        if initialized_repo or sparse_enabled.stdout.strip() == "true":
+            # --no-cone supports both directories and individual files, which is
+            # needed for surgical syncs like data/raw/daily/<YYYYMMDD>.csv.
+            run_git("sparse-checkout", "init", "--no-cone", check=False)
+            run_git("sparse-checkout", "set", "--no-cone", *patterns)
+
+        if initialized_repo:
+            run_git("fetch", "--depth", "1", "origin", "main")
+            run_git("checkout", "-B", "main", "FETCH_HEAD")
+        else:
+            run_git("pull", "--ff-only", "origin", "main")
+        return True
     except subprocess.TimeoutExpired:
         print(f"Warning: Remote sync of results repo timed out after {timeout_seconds}s.")
     except Exception as e:
         print(f"Warning: Remote sync of results repo failed: {str(e)}")
 
-    return success
+    return False
+
+
+def _ensure_results_repo(
+    *,
+    include_parquets: bool = False,
+    specific_raw_date: str | None = None,
+    required_paths: tuple[str, ...] = (),
+) -> bool:
+    """Sync the results repo, but allow existing local data if remote sync fails."""
+    if _sync_results_repo(
+        include_parquets=include_parquets,
+        specific_raw_date=specific_raw_date,
+    ):
+        return True
+
+    if required_paths:
+        return all((DEFAULT_RESULTS_REPO / path).exists() for path in required_paths)
+    return DEFAULT_RESULTS_REPO.exists()
 
 
 def _is_trading_day(date: dt.date) -> bool:
@@ -121,6 +152,10 @@ def list_active_prompts() -> dict[str, Any]:
     Lists the IDs of all available strategy generation prompts.
     """
     try:
+        if not _ensure_results_repo(required_paths=("prompts",)):
+            return {
+                "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+            }
         from agentstockbenchmark.stage1.prompts import list_prompts
         return {"prompts": [p.prompt_id for p in list_prompts()]}
     except Exception as e:
@@ -147,7 +182,11 @@ def refresh_market_data(date: str) -> dict[str, Any]:
             return error
 
         # 1. Sync and check if data exists in results repo (authoritative source)
-        _sync_results_repo(include_parquets=True, specific_raw_date=date)
+        _ensure_results_repo(
+            include_parquets=True,
+            specific_raw_date=date,
+            required_paths=("data/parquet",),
+        )
         daily_csv = DEFAULT_RESULTS_REPO / "data" / "raw" / "daily" / f"{date}.csv"
         
         if daily_csv.exists():
@@ -197,6 +236,10 @@ def list_available_strategies(prompt_id: str | None = None) -> dict[str, Any]:
         prompt_id: Optional ID to filter strategies by a specific prompt version.
     """
     try:
+        if not _ensure_results_repo(required_paths=("prompts", "strategies")):
+            return {
+                "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+            }
         from agentstockbenchmark.stage1.strategies import list_strategies
         from agentstockbenchmark.stage1.prompts import list_prompts
         
@@ -228,6 +271,14 @@ def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
         date: The date to run on (YYYYMMDD).
     """
     try:
+        if not _ensure_results_repo(
+            include_parquets=True,
+            required_paths=("strategies", "data/parquet"),
+        ):
+            return {
+                "status": "FAIL",
+                "error": f"Could not sync or find required results data at {DEFAULT_RESULTS_REPO}.",
+            }
         from agentstockbenchmark.stage2.rankings import generate_rankings
         from agentstockbenchmark.workflow import default_data_dir
         from agentstockbenchmark.stage1.strategies import list_strategies
@@ -244,7 +295,7 @@ def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
 
         # Check if data exists
-        _sync_results_repo(include_parquets=True)
+        _ensure_results_repo(include_parquets=True, required_paths=("data/parquet",))
         close_path = data_dir / "close.parquet"
         if close_path.exists():
             import pandas as pd
@@ -291,11 +342,15 @@ def get_top_positions(strategy_id: str, target_trading_date: str, top_n: int = 1
         target_trading_date: The date you want to enter the trades (YYYYMMDD).
         top_n: Number of top long/short positions to return.
     """
-    from agentstockbenchmark.stage3.portfolio import build_portfolios
-    from agentstockbenchmark.stage1.strategies import list_strategies
-    import pandas as pd
-    
     try:
+        if not _ensure_results_repo(required_paths=("strategies", "portfolios")):
+            return {
+                "error": f"Could not sync or find required results data at {DEFAULT_RESULTS_REPO}."
+            }
+        from agentstockbenchmark.stage3.portfolio import build_portfolios
+        from agentstockbenchmark.stage1.strategies import list_strategies
+        import pandas as pd
+
         # 0. Validate strategy existence
         strategies = list_strategies(selector=strategy_id)
         if not strategies:
@@ -382,6 +437,11 @@ def create_research_workspace(prompt_id: str, run_id: str | None = None) -> dict
         run_id: Optional unique ID for this research run.
     """
     try:
+        if not _ensure_results_repo(required_paths=("prompts",)):
+            return {
+                "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+            }
+        from agentstockbenchmark.research import generate_strategies_workspace
         from agentstockbenchmark.stage1.prompts import list_prompts
         available_prompts = [p.prompt_id for p in list_prompts()]
         if prompt_id not in available_prompts:
@@ -416,10 +476,18 @@ def run_research_backtest(
         strategy_selector: Optional glob pattern to select specific strategies.
     """
     try:
+        if not _ensure_results_repo(
+            include_parquets=True,
+            required_paths=("prompts", "strategies", "data/parquet"),
+        ):
+            return {
+                "error": f"Could not sync or find required results data at {DEFAULT_RESULTS_REPO}."
+            }
         from agentstockbenchmark.workflow import default_data_dir
         from agentstockbenchmark.stage1.strategies import list_strategies
         from agentstockbenchmark.settings import STRATEGIES_DIR
-        from agentstockbenchmark.research import research_run_dir, resolve_research_strategies_dir, find_research_run
+        from agentstockbenchmark.research import resolve_research_strategies_dir, find_research_run
+        from agentstockbenchmark.research import research_backtest
         
         start = parse_date(start_date)
         end = parse_date(end_date)
@@ -483,6 +551,11 @@ def analyze_results(run_id: str) -> dict[str, Any]:
     """
     import json
     try:
+        if not _ensure_results_repo():
+            return {
+                "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+            }
+        from agentstockbenchmark.research import analyze_research_run
         analysis_path = analyze_research_run(run_id=run_id)
         with open(analysis_path, 'r') as f:
             data = json.load(f)
@@ -507,6 +580,11 @@ def promote_strategy(run_id: str, strategy_id: str) -> dict[str, Any]:
         strategy_id: The ID of the strategy to promote.
     """
     try:
+        if not _ensure_results_repo():
+            return {
+                "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+            }
+        from agentstockbenchmark.research import promote_research_strategy
         dest_path = promote_research_strategy(run_id=run_id, strategy_id=strategy_id)
         return {"status": "SUCCESS", "promoted_path": str(dest_path)}
     except Exception as e:
@@ -521,6 +599,16 @@ def run_production_daily(date: str) -> dict[str, Any]:
         date: The date to run (YYYYMMDD).
     """
     try:
+        if not _ensure_results_repo(
+            include_parquets=True,
+            required_paths=("prompts", "strategies"),
+        ):
+            return {
+                "status": "FAIL",
+                "error": f"Could not sync or find required results data at {DEFAULT_RESULTS_REPO}.",
+            }
+        from agentstockbenchmark.workflow import run_daily
+
         run_date, error = _validate_trading_date(date)
         if error:
             # Re-format error to match JSON expectation but include status: FAIL
@@ -537,10 +625,17 @@ def get_leaderboard() -> dict[str, Any]:
     Retrieves the current production leaderboard in Markdown format.
     Automatically syncs with the remote repository to ensure data is up to date.
     """
-    from agentstockbenchmark.stage3.leaderboard import build_leaderboard
-    
     # Auto-Sync with Remote
-    _sync_results_repo()
+    if not _ensure_results_repo(required_paths=("leaderboard/leaderboard.md",)):
+        return {
+            "error": f"Could not sync or find results repo at {DEFAULT_RESULTS_REPO}."
+        }
+
+    leaderboard_path = DEFAULT_RESULTS_REPO / "leaderboard" / "leaderboard.md"
+    if leaderboard_path.exists():
+        return {"leaderboard_markdown": leaderboard_path.read_text()}
+
+    from agentstockbenchmark.stage3.leaderboard import build_leaderboard
 
     # Build and Return Leaderboard
     try:
@@ -552,7 +647,6 @@ def get_leaderboard() -> dict[str, Any]:
             "hint": "You may need to run 'run_production_daily' to generate local data."
         }
     
-    leaderboard_path = DEFAULT_RESULTS_REPO / "leaderboard" / "leaderboard.md"
     if leaderboard_path.exists():
         return {"leaderboard_markdown": leaderboard_path.read_text()}
     return {"error": "Leaderboard file not found after sync."}
