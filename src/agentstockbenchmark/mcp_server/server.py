@@ -18,7 +18,7 @@ from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 
 mcp = FastMCP("AgentStockBenchmark")
 
-def _sync_results_repo(timeout_seconds: int = 30):
+def _sync_results_repo(timeout_seconds: int = 300):
     """Helper to sync the local results repo with the remote GitHub repo safely.
     Also acts as a 'batteries-included' initializer, copying default prompts and strategies 
     from the results repo into the user's local project environment if they are missing.
@@ -26,6 +26,14 @@ def _sync_results_repo(timeout_seconds: int = 30):
     import subprocess
     import os
     import shutil
+    
+    # Check if git is installed first
+    try:
+        subprocess.run(["git", "--version"], check=True, capture_output=True, timeout=5)
+    except Exception:
+        print("Warning: 'git' command not found. Please install Git to enable auto-sync.")
+        return False
+
     repo_url = "https://github.com/xsunsim/AgentStockBenchmarkResults.git"
     target_dir = DEFAULT_RESULTS_REPO
     
@@ -51,50 +59,56 @@ def _sync_results_repo(timeout_seconds: int = 30):
             subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
         success = True
     except subprocess.TimeoutExpired:
-        print("Warning: Remote sync timed out.")
+        print(f"Warning: Remote sync of results repo timed out after {timeout_seconds}s.")
     except Exception as e:
-        print(f"Warning: Remote sync failed: {str(e)}")
+        print(f"Warning: Remote sync of results repo failed: {str(e)}")
 
-    if success:
-        # "Batteries Included" logic: Seed the local project with the official prompts and strategies
-        try:
-            from agentstockbenchmark.settings import STRATEGIES_DIR, PROMPTS_DIR
-            
-            # If the directories are completely empty or missing, download them from the engine repo
-            needs_seed = False
-            if not PROMPTS_DIR.exists() or not any(PROMPTS_DIR.iterdir()):
-                needs_seed = True
-            if not STRATEGIES_DIR.exists() or not any(STRATEGIES_DIR.iterdir()):
-                needs_seed = True
+    # "Batteries Included" logic: Seed the local project with the official prompts and strategies
+    # This runs INDEPENDENTLY of the results repo success, as long as we have git.
+    try:
+        from agentstockbenchmark.settings import STRATEGIES_DIR, PROMPTS_DIR
+        
+        # If the directories are completely empty or missing, download them from the engine repo
+        needs_seed = False
+        if not PROMPTS_DIR.exists() or not any(PROMPTS_DIR.iterdir()):
+            needs_seed = True
+        if not STRATEGIES_DIR.exists() or not any(STRATEGIES_DIR.iterdir()):
+            needs_seed = True
 
-            if needs_seed:
-                import tempfile
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    # Windows git clone often fails if cloning directly into the root of a TemporaryDirectory
-                    # because the directory is locked or not considered "empty" by git.
-                    clone_target = Path(tmpdir) / "repo"
-                    engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
-                    subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, str(clone_target)], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                    
-                    tmp_prompts = clone_target / "prompts"
-                    tmp_strategies = clone_target / "strategies"
-                    
-                    if tmp_prompts.exists():
-                        PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-                        for item in tmp_prompts.iterdir():
-                            dest_item = PROMPTS_DIR / item.name
-                            if not dest_item.exists():
-                                shutil.copytree(item, dest_item) if item.is_dir() else shutil.copy2(item, dest_item)
+        if needs_seed:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # Windows git clone often fails if cloning directly into the root of a TemporaryDirectory
+                # because the directory is locked or not considered "empty" by git.
+                clone_target = Path(tmpdir) / "repo"
+                engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
+                subprocess.run(["git", "clone", "--depth", "1", engine_repo_url, str(clone_target)], check=True, capture_output=True, timeout=timeout_seconds, env=env)
+                
+                tmp_prompts = clone_target / "prompts"
+                tmp_strategies = clone_target / "strategies"
+                
+                if tmp_prompts.exists():
+                    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+                    for item in tmp_prompts.iterdir():
+                        dest_item = PROMPTS_DIR / item.name
+                        if not dest_item.exists():
+                            if item.is_dir():
+                                shutil.copytree(item, dest_item)
+                            else:
+                                shutil.copy2(item, dest_item)
 
-                    if tmp_strategies.exists():
-                        STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
-                        for item in tmp_strategies.iterdir():
-                            dest_item = STRATEGIES_DIR / item.name
-                            if not dest_item.exists():
-                                shutil.copytree(item, dest_item) if item.is_dir() else shutil.copy2(item, dest_item)
-                                
-        except Exception as e:
-            print(f"Warning: Failed to seed local environment from engine repo: {e}")
+                if tmp_strategies.exists():
+                    STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
+                    for item in tmp_strategies.iterdir():
+                        dest_item = STRATEGIES_DIR / item.name
+                        if not dest_item.exists():
+                            if item.is_dir():
+                                shutil.copytree(item, dest_item)
+                            else:
+                                shutil.copy2(item, dest_item)
+                            
+    except Exception as e:
+        print(f"Warning: Failed to seed local environment from engine repo: {e}")
 
     return success
 
