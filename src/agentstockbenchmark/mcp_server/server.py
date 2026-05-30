@@ -51,8 +51,8 @@ def _sync_results_repo(timeout_seconds: int = 300, include_data: bool = False):
             
             # Use modern sparse-checkout if available
             subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
-            # Essential metadata patterns
-            patterns = ["leaderboard", "manifests", "README.md", "README_CN.md", "daily_digest"]
+            # Essential patterns: metadata + prompts + strategies
+            patterns = ["leaderboard", "manifests", "prompts", "strategies", "README.md", "README_CN.md", "daily_digest"]
             if include_data:
                 patterns.append("data")
             subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "set"] + patterns, check=True, capture_output=True, timeout=timeout_seconds, env=env)
@@ -70,57 +70,6 @@ def _sync_results_repo(timeout_seconds: int = 300, include_data: bool = False):
         print(f"Warning: Remote sync of results repo timed out after {timeout_seconds}s.")
     except Exception as e:
         print(f"Warning: Remote sync of results repo failed: {str(e)}")
-
-    # "Batteries Included" logic: Seed the local project with the official prompts and strategies
-    try:
-        from agentstockbenchmark.settings import STRATEGIES_DIR, PROMPTS_DIR
-        
-        # If the directories are completely empty or missing, download them from the engine repo
-        needs_seed = False
-        if not PROMPTS_DIR.exists() or not any(PROMPTS_DIR.iterdir()):
-            needs_seed = True
-        if not STRATEGIES_DIR.exists() or not any(STRATEGIES_DIR.iterdir()):
-            needs_seed = True
-
-        if needs_seed:
-            import tempfile
-            with tempfile.TemporaryDirectory() as tmpdir:
-                clone_target = Path(tmpdir) / "repo"
-                clone_target.mkdir(parents=True, exist_ok=True)
-                engine_repo_url = "https://github.com/xsunsim/AgentStockBenchmark.git"
-                
-                # Surgical clone for prompts and strategies only
-                subprocess.run(["git", "-C", str(clone_target), "init"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(clone_target), "remote", "add", "origin", engine_repo_url], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(clone_target), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(clone_target), "sparse-checkout", "set", "prompts", "strategies"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                subprocess.run(["git", "-C", str(clone_target), "pull", "--depth", "1", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
-                
-                tmp_prompts = clone_target / "prompts"
-                tmp_strategies = clone_target / "strategies"
-                
-                if tmp_prompts.exists():
-                    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-                    for item in tmp_prompts.iterdir():
-                        dest_item = PROMPTS_DIR / item.name
-                        if not dest_item.exists():
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
-
-                if tmp_strategies.exists():
-                    STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
-                    for item in tmp_strategies.iterdir():
-                        dest_item = STRATEGIES_DIR / item.name
-                        if not dest_item.exists():
-                            if item.is_dir():
-                                shutil.copytree(item, dest_item)
-                            else:
-                                shutil.copy2(item, dest_item)
-                            
-    except Exception as e:
-        print(f"Warning: Failed to seed local environment from engine repo: {e}")
 
     return success
 
