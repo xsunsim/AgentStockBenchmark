@@ -18,7 +18,7 @@ from agentstockbenchmark.settings import DEFAULT_RESULTS_REPO
 
 mcp = FastMCP("AgentStockBenchmark")
 
-def _sync_results_repo(timeout_seconds: int = 300, include_data: bool = False):
+def _sync_results_repo(timeout_seconds: int = 300, include_parquets: bool = False, specific_raw_date: str | None = None):
     """Helper to sync the local results repo with the remote GitHub repo safely.
     Uses sparse-checkout to prioritize essential metadata (leaderboards, manifests) 
     over heavy market data.
@@ -51,17 +51,30 @@ def _sync_results_repo(timeout_seconds: int = 300, include_data: bool = False):
             
             # Use modern sparse-checkout if available
             subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "init", "--cone"], capture_output=True, timeout=timeout_seconds, env=env)
-            # Essential patterns: metadata + prompts + strategies
-            patterns = ["leaderboard", "manifests", "prompts", "strategies", "README.md", "README_CN.md", "daily_digest"]
-            if include_data:
-                patterns.append("data")
+            # Essential patterns: metadata + prompts + strategies + leaderboard + portfolios
+            patterns = ["leaderboard", "manifests", "prompts", "strategies", "portfolios", "README.md", "README_CN.md", "daily_digest"]
+            if include_parquets:
+                patterns.append("data/parquet")
+            if specific_raw_date:
+                patterns.append(f"data/raw/daily/{specific_raw_date}.csv")
+                
             subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "set"] + patterns, check=True, capture_output=True, timeout=timeout_seconds, env=env)
             
             subprocess.run(["git", "-C", str(target_dir), "pull", "--depth", "1", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
         else:
             # Existing repo: sync patterns
-            if include_data:
-                subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "add", "data"], capture_output=True, timeout=timeout_seconds, env=env)
+            current_patterns = subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "list"], capture_output=True, text=True).stdout.splitlines()
+            
+            new_patterns = []
+            if include_parquets and "data/parquet" not in current_patterns:
+                new_patterns.append("data/parquet")
+            if specific_raw_date:
+                raw_pattern = f"data/raw/daily/{specific_raw_date}.csv"
+                if raw_pattern not in current_patterns:
+                    new_patterns.append(raw_pattern)
+            
+            if new_patterns:
+                subprocess.run(["git", "-C", str(target_dir), "sparse-checkout", "add"] + new_patterns, capture_output=True, timeout=timeout_seconds, env=env)
             
             subprocess.run(["git", "-C", str(target_dir), "pull", "origin", "main"], check=True, capture_output=True, timeout=timeout_seconds, env=env)
             
@@ -134,7 +147,7 @@ def refresh_market_data(date: str) -> dict[str, Any]:
             return error
 
         # 1. Sync and check if data exists in results repo (authoritative source)
-        _sync_results_repo(include_data=True)
+        _sync_results_repo(include_parquets=True, specific_raw_date=date)
         daily_csv = DEFAULT_RESULTS_REPO / "data" / "raw" / "daily" / f"{date}.csv"
         
         if daily_csv.exists():
@@ -229,8 +242,9 @@ def run_strategy_on_date(strategy_id: str, date: str) -> dict[str, Any]:
             return {"error": f"Strategy matching {strategy_id!r} not found."}
 
         data_dir = default_data_dir(DEFAULT_RESULTS_REPO)
-        
+
         # Check if data exists
+        _sync_results_repo(include_parquets=True)
         close_path = data_dir / "close.parquet"
         if close_path.exists():
             import pandas as pd
