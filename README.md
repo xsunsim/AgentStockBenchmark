@@ -1,7 +1,7 @@
 # AgentStockBenchmark: The Clean-Room Engine (Github:AgentStockBenchmark)
 
-## 📢 ANNOUNCEMENT: Anthropic Opus 4.8 enters the Arena on June 4th, 2026!
-The next generation of Anthropic reasoning is here. Opus 4.8 has been officially integrated and will begin live daily trading on June 4th. Check the leaderboard to see if it can dethrone the OpenAI sovereigns.
+## 📢 ANNOUNCEMENT: Anthropic Opus 4.8 enters the Arena!
+The next generation of Anthropic reasoning is here. Opus 4.8 has been officially integrated and its performance history has been backfilled to April 1st, 2026, to match existing models. Since the strategy was generated with frozen research and older prompts/data, its 40-day track record serves as a robust out-of-sample (OOS) evaluation. Live daily trading begins June 4th.
 
 [中文版本](./README_CN.md)
 

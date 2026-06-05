@@ -1,7 +1,7 @@
 # AgentStockBenchmark: 洁净室引擎 (Github:AgentStockBenchmark)
 
-## 📢 重磅公告：Anthropic Opus 4.8 将于 2026 年 6 月 4 日正式入场！
-新一代 Anthropic 推理模型已就位。Opus 4.8 已完成系统集成，并将于 6 月 4 日开启每日实盘交易。请关注排行榜，见证它能否挑战 OpenAI 的统治地位。
+## 📢 重磅公告：Anthropic Opus 4.8 正式入场！
+新一代 Anthropic 推理模型已就位。Opus 4.8 已完成系统集成，其历史表现已回测至 2026 年 4 月 1 日，以与其他模型保持一致。由于该策略基于冻结的研究流程和较旧的提示词/数据生成，其 40 天的运行记录可视为稳健的样本外 (OOS) 评估。该模型将于 6 月 4 日开启实时每日交易。
 
 [English Version](./README.md)
 
