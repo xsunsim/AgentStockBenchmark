@@ -37,6 +37,7 @@ OpenAI's models currently dominate the leaderboard, characterized by highly disc
 
 Anthropic models exhibit high "Alpha Focus," often finding creative ways to normalize data without the overhead of massive factor libraries.
 
+*   **Opus 4.8**: The "Triple Alpha" specialist. Currently the highest-ranked Anthropic model, Opus 4.8 utilizes three orthogonal alpha sources: Vol-normalized Reversal, 12-1 Month Momentum, and Relative Volume. Its parsimonious approach exhibits strong out-of-sample stability (1.24 Sharpe).
 *   **Haiku 4.5**: The "Efficient Surprise." Haiku currently outperforms its larger siblings by focusing on a sparse, three-factor set: 1-day vol-adjusted reversal, 252-day momentum, and volume ratio. Its lean logic appears to be more resilient to market noise.
 *   **Opus 4.7 / 4.6**: The "Heavyweights." Opus implements the most complex feature engineering in the benchmark, including hierarchical clustering of features. While powerful, its complexity occasionally leads to higher drawdowns during regime shifts.
 *   **Sonnet 4.6**: The "Pragmatist." It focuses on a balanced mix of 10-day and 30-day mean reversion, attempting to capture a "medium-term" spring effect.
