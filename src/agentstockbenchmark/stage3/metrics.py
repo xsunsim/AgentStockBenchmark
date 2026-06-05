@@ -40,15 +40,22 @@ def build_metrics(
         return pd.DataFrame()
 
     result = pd.DataFrame(rows).sort_values("sharpe", ascending=False)
+    
+    # Calculate standardized PnL to allow fair comparison between models with different start dates
+    # We normalize to the maximum n_days observed in the current set.
+    max_days = result["n_days"].max() if not result.empty else 0
+    result["standardized_pnl"] = round(result["avg_daily_pnl"] * max_days, 2)
+    
     result = result.reset_index(drop=True)
     result = result[
         [
             "strategy_id",
             "sharpe",
+            "standardized_pnl",
             "cumulative_pnl",
+            "avg_daily_pnl",
             "max_drawdown",
             "win_rate",
-            "avg_daily_pnl",
             "n_days",
         ]
     ]
